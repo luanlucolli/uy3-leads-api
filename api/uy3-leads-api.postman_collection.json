@@ -1,0 +1,318 @@
+{
+  "info": {
+    "_postman_id": "9cb1df11-6d9e-46e2-a843-fbf18b7d2b0f",
+    "name": "uy3-leads-api",
+    "description": "Collection Postman da API uy3-leads-api. Inclui login, webhook, listagem paginada e exportacao CSV.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "jwt_token",
+      "value": ""
+    },
+    {
+      "key": "uy3_webhook_secret",
+      "value": ""
+    },
+    {
+      "key": "user_email",
+      "value": ""
+    },
+    {
+      "key": "user_password",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Healthcheck simples da API."
+      },
+      "response": []
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var data = pm.response.json();",
+                  "if (data.token) {",
+                  "  pm.collectionVariables.set(\"jwt_token\", data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            },
+            "description": "Autentica um usuario e salva o JWT automaticamente na variavel `jwt_token`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhook",
+      "item": [
+        {
+          "name": "Receive Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-UY3-Secret-Key",
+                "value": "{{uy3_webhook_secret}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"typeWebook\": \"lead.created\",\n  \"cpf\": \"12345678900\",\n  \"nomeTrabalhador\": \"Maria da Silva\",\n  \"status\": \"aprovado\",\n  \"elegivelEmprestimo\": true,\n  \"valorLiberado\": 3500.75,\n  \"margemDisponivel\": 412.33,\n  \"numeroParcelas\": 12,\n  \"dataHoraValidadeSolicitacao\": \"2026-04-28T20:00:00Z\",\n  \"dataNascimento\": \"1990-05-20\",\n  \"dataAdmissao\": \"2020-01-10\",\n  \"isMei\": false,\n  \"isJudicialRecovery\": false,\n  \"pepCodigo\": false,\n  \"activeFgtsDebts\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhook",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhook"
+              ]
+            },
+            "description": "Envia um lead bruto para a API com o header de autenticacao do parceiro UY3."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Leads",
+      "item": [
+        {
+          "name": "List Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/leads?page=1&per_page=20&period=all&sort=received_at&direction=desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "period",
+                  "value": "all"
+                },
+                {
+                  "key": "sort",
+                  "value": "received_at"
+                },
+                {
+                  "key": "direction",
+                  "value": "desc"
+                }
+              ]
+            },
+            "description": "Lista leads paginados para o frontend."
+          },
+          "response": []
+        },
+        {
+          "name": "List Leads by Period 7d",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/leads?page=1&per_page=20&period=7d&sort=id&direction=asc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "period",
+                  "value": "7d"
+                },
+                {
+                  "key": "sort",
+                  "value": "id"
+                },
+                {
+                  "key": "direction",
+                  "value": "asc"
+                }
+              ]
+            },
+            "description": "Exemplo de listagem filtrando pelos ultimos 7 dias."
+          },
+          "response": []
+        },
+        {
+          "name": "List Leads by Date Range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/leads?page=1&per_page=20&from=2026-04-01&to=2026-04-28&sort=received_at&direction=desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20"
+                },
+                {
+                  "key": "from",
+                  "value": "2026-04-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-04-28"
+                },
+                {
+                  "key": "sort",
+                  "value": "received_at"
+                },
+                {
+                  "key": "direction",
+                  "value": "desc"
+                }
+              ]
+            },
+            "description": "Exemplo de listagem usando `from` e `to`, que sobrescrevem `period`."
+          },
+          "response": []
+        },
+        {
+          "name": "Export Leads CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/leads/export?period=30d&sort=received_at&direction=desc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leads",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "30d"
+                },
+                {
+                  "key": "sort",
+                  "value": "received_at"
+                },
+                {
+                  "key": "direction",
+                  "value": "desc"
+                }
+              ]
+            },
+            "description": "Faz o download do CSV com BOM UTF-8 e delimitador `;`."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

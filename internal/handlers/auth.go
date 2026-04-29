@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/luanlucolli/uy3-leads-api/internal/auth"
+	"github.com/luanlucolli/uy3-leads-api/internal/middleware"
 )
 
 type AuthHandler struct {
@@ -41,4 +42,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	user, err := h.authService.CurrentUser(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":    user.ID,
+		"email": user.Email,
+	})
 }

@@ -84,6 +84,7 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireJWT(authService))
+		r.Get("/me", authHandler.Me)
 		r.Get("/leads", leadsHandler.List)
 		r.Get("/leads/export", leadsHandler.ExportCSV)
 	})

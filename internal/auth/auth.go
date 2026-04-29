@@ -82,3 +82,20 @@ func (s *Service) ParseToken(rawToken string) (*Claims, error) {
 
 	return claims, nil
 }
+
+func (s *Service) CurrentUser(ctx context.Context, userID int64) (models.User, error) {
+	var user models.User
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, email, password_hash
+		FROM users
+		WHERE id = ?
+	`, userID).Scan(&user.ID, &user.Email, &user.PasswordHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.User{}, fmt.Errorf("usuario nao encontrado")
+	}
+	if err != nil {
+		return models.User{}, err
+	}
+
+	return user, nil
+}

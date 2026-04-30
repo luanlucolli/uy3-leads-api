@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
@@ -31,14 +32,17 @@ func main() {
 
 	db, err := database.Open(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		log.Printf("warning: database unavailable on startup: %v", err)
+	} else {
+		defer db.Close()
 	}
-	defer db.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("database ping: %v", err)
+	if db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			log.Printf("warning: database ping failed on startup: %v", err)
+		}
 	}
 
 	authService, err := auth.NewService(db, cfg.JWTSecret)
@@ -76,10 +80,30 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
 
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if db == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":    "error",
+				"component": "database",
+			})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":    "error",
+				"component": "database",
+			})
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	r.Post("/login", authHandler.Login)

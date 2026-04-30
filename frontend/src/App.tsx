@@ -11,6 +11,7 @@ import {
   Search,
   ShieldCheck,
 } from 'lucide-react'
+import { Toaster, toast } from 'react-hot-toast'
 import {
   ApiError,
   api,
@@ -57,22 +58,47 @@ function App() {
     void loadSession()
   }, [])
 
-  if (checkingSession) {
-    return <LoadingScreen />
-  }
-
-  if (!user) {
-    return <LoginScreen onLoggedIn={setUser} />
-  }
-
   return (
-    <Dashboard
-      user={user}
-      onLogout={() => {
-        clearToken()
-        setUser(null)
-      }}
-    />
+    <>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3500,
+          style: {
+            background: '#151922',
+            color: '#eef2f6',
+            border: '1px solid #2a303c',
+            boxShadow: '0 18px 48px rgb(0 0 0 / 28%)',
+          },
+          success: {
+            iconTheme: {
+              primary: '#2dd4bf',
+              secondary: '#151922',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#151922',
+            },
+          },
+        }}
+      />
+
+      {checkingSession ? (
+        <LoadingScreen />
+      ) : user ? (
+        <Dashboard
+          user={user}
+          onLogout={() => {
+            clearToken()
+            setUser(null)
+          }}
+        />
+      ) : (
+        <LoginScreen onLoggedIn={setUser} />
+      )}
+    </>
   )
 }
 
@@ -91,12 +117,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
-    setError('')
 
     try {
       const { token } = await api.login(email.trim(), password)
@@ -105,7 +129,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
       onLoggedIn(currentUser)
     } catch (err) {
       clearToken()
-      setError(err instanceof ApiError && err.status === 401 ? 'Credenciais inválidas' : errorMessage(err, 'Não foi possível entrar'))
+      toast.error(err instanceof ApiError && err.status === 401 ? 'Credenciais inválidas' : errorMessage(err, 'Não foi possível entrar'))
     } finally {
       setLoading(false)
     }
@@ -155,8 +179,6 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
             />
           </div>
 
-          {error && <div className="alert text-sm">{error}</div>}
-
           <button className="button button-primary w-full text-base font-medium" type="submit" disabled={loading}>
             {loading ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
             Entrar
@@ -177,11 +199,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [data, setData] = useState<LeadsResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [error, setError] = useState('')
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
   async function fetchLeads(targetPage = page) {
     setLoading(true)
-    setError('')
 
     try {
       const response = await api.leads(buildFilters(targetPage))
@@ -192,7 +213,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         onLogout()
         return
       }
-      setError(errorMessage(err, 'Não foi possível carregar os leads'))
+      toast.error(errorMessage(err, 'Não foi possível carregar os leads'))
     } finally {
       setLoading(false)
     }
@@ -200,16 +221,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   async function handleExport() {
     setExporting(true)
-    setError('')
 
     try {
       await downloadLeadsExport(buildFilters(1))
+      toast.success('Download iniciado!')
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onLogout()
         return
       }
-      setError(errorMessage(err, 'Não foi possível exportar o CSV'))
+      toast.error(errorMessage(err, 'Não foi possível exportar o CSV'))
     } finally {
       setExporting(false)
     }
@@ -249,7 +270,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
           <div className="flex items-center gap-4">
             <span className="hidden text-sm font-medium text-muted md:inline">{user.email}</span>
-            <button className="button button-muted text-sm font-medium" type="button" onClick={onLogout}>
+            <button className="button button-muted text-sm font-medium" type="button" onClick={() => setLogoutDialogOpen(true)}>
               <LogOut className="size-4" />
               Sair
             </button>
@@ -355,8 +376,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
         </section>
 
-        {error && <div className="alert mb-5 text-sm">{error}</div>}
-
         <section className="panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="data-table w-full text-sm">
@@ -431,6 +450,52 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
         </section>
       </main>
+
+      {logoutDialogOpen && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onClick={() => setLogoutDialogOpen(false)}
+        >
+          <div
+            className="dialog-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-dialog-title"
+            aria-describedby="logout-dialog-description"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="dialog-content">
+              <h2 id="logout-dialog-title" className="dialog-title">
+                Confirmar Saída
+              </h2>
+              <p id="logout-dialog-description" className="dialog-description">
+                Tem certeza que deseja encerrar sua sessão?
+              </p>
+            </div>
+
+            <div className="dialog-actions">
+              <button
+                className="button button-muted"
+                type="button"
+                onClick={() => setLogoutDialogOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="button button-danger"
+                type="button"
+                onClick={() => {
+                  setLogoutDialogOpen(false)
+                  onLogout()
+                }}
+              >
+                Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

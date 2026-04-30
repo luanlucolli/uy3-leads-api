@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Database,
   Download,
+  Filter,
   Loader2,
   LogOut,
   RefreshCcw,
@@ -29,6 +30,7 @@ const periods = [
   { value: '7d', label: '7 dias' },
   { value: '30d', label: '30 dias' },
   { value: '90d', label: '90 dias' },
+  { value: 'custom', label: 'Personalizado' },
 ]
 
 function App() {
@@ -166,7 +168,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
-  const [period, setPeriod] = useState('7d')
+  const [interval, setInterval] = useState('7d')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc')
@@ -219,7 +221,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       per_page: perPage,
       sort: 'received_at',
       direction,
-      ...(from || to ? { from, to } : { period }),
+      ...(interval === 'custom' ? { from, to } : { period: interval }),
     }
   }
 
@@ -258,87 +260,100 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-        <section className="mb-6 grid gap-3 md:grid-cols-2">
+        <section className="mb-6 grid gap-4 md:grid-cols-2">
           <Metric label="Total filtrado" value={formatInteger(data?.total ?? 0)} />
           <Metric label="Elegíveis na página" value={formatInteger(eligibleCount)} />
         </section>
 
-        <section className="panel mb-5 p-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_0.9fr_auto_auto]">
-            <div>
-              <label className="field-label" htmlFor="period">
-                Periodo
-              </label>
-              <select
-                id="period"
-                className="field"
-                value={period}
-                onChange={(event) => setPeriod(event.target.value)}
-                disabled={Boolean(from || to)}
-              >
-                {periods.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+        <section className="panel mb-6">
+          <div className="border-b border-border bg-soft/30 px-5 py-3">
+            <h2 className="flex items-center gap-2 text-sm font-medium text-strong">
+              <Filter className="size-4 text-muted" />
+              Filtros e Exportação
+            </h2>
+          </div>
+          
+          <div className="p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+              <div className="min-w-[200px] flex-1">
+                <label className="field-label" htmlFor="interval">
+                  Intervalo
+                </label>
+                <select
+                  id="interval"
+                  className="field"
+                  value={interval}
+                  onChange={(event) => {
+                    const nextInterval = event.target.value
+                    setInterval(nextInterval)
+                    if (nextInterval !== 'custom') {
+                      setFrom('')
+                      setTo('')
+                    }
+                  }}
+                >
+                  {periods.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="min-w-[200px] flex-1">
+                <label className="field-label" htmlFor="order">
+                  Ordenação
+                </label>
+                <select id="order" className="field" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
+                  <option value="desc">Mais recente</option>
+                  <option value="asc">Mais antigo</option>
+                </select>
+              </div>
+
+              {interval === 'custom' && (
+                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-1 sm:flex-row sm:items-end md:min-w-[340px]">
+                  <div className="flex-1">
+                    <label className="field-label" htmlFor="from">
+                      De
+                    </label>
+                    <input id="from" className="field" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                  </div>
+
+                  <div className="flex-1">
+                    <label className="field-label" htmlFor="to">
+                      Até
+                    </label>
+                    <input id="to" className="field" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                  </div>
+
+                  <button
+                    className="button button-muted mt-2 sm:mt-0"
+                    type="button"
+                    onClick={() => {
+                      setFrom('')
+                      setTo('')
+                    }}
+                    title="Limpar datas"
+                  >
+                    <RefreshCcw className="size-4" />
+                    <span className="sm:hidden">Limpar datas</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="field-label" htmlFor="from">
-                De
-              </label>
-              <input id="from" className="field" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="to">
-                Até
-              </label>
-              <input id="to" className="field" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="order">
-                Ordenação
-              </label>
-              <select id="order" className="field" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
-                <option value="desc">Mais recente</option>
-                <option value="asc">Mais antigo</option>
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <button className="button button-primary w-full" type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
-                {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-                Buscar
-              </button>
-            </div>
-
-            <div className="flex items-end">
-              <button className="button button-muted w-full" type="button" onClick={() => void handleExport()} disabled={exporting}>
+            <div className="mt-6 flex flex-col-reverse items-center justify-end gap-3 border-t border-border pt-5 sm:flex-row">
+              <button className="button button-muted w-full sm:w-auto" type="button" onClick={() => void handleExport()} disabled={exporting}>
                 {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                CSV
+                Exportar CSV
+              </button>
+              
+              <button className="button button-primary w-full sm:w-auto" type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
+                {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                Buscar Leads
               </button>
             </div>
           </div>
-
-          {(from || to) && (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-soft px-3 py-2 text-xs text-muted">
-              <span>Filtro por datas ativo. O período fica pausado enquanto houver data preenchida.</span>
-              <button
-                className="inline-flex items-center gap-1 font-medium text-accent"
-                type="button"
-                onClick={() => {
-                  setFrom('')
-                  setTo('')
-                }}
-              >
-                <RefreshCcw className="size-3" />
-                Limpar
-              </button>
-            </div>
-          )}
         </section>
 
         {error && <div className="alert mb-5">{error}</div>}

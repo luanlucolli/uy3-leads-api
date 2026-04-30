@@ -132,7 +132,7 @@ Regras atuais:
 
 A collection para testes manuais esta em:
 
-[`api/uy3-leads-api.postman_collection.json`](/home/luan/projects/uy3-leads-api/api/uy3-leads-api.postman_collection.json)
+[`api/uy3-leads-api.postman_collection.json`](https://github.com/luanlucolli/uy3-leads-api/blob/main/api/uy3-leads-api.postman_collection.json)
 
 ## Comportamento no startup
 

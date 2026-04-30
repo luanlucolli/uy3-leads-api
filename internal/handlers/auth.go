@@ -37,7 +37,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.authService.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "credenciais invalidas")
+		if err.Error() == "credenciais invalidas" {
+			writeError(w, http.StatusUnauthorized, "credenciais inválidas")
+		} else {
+			// Erros de banco de dados, timeout, etc.
+			writeError(w, http.StatusInternalServerError, "serviço indisponível no momento")
+		}
 		return
 	}
 

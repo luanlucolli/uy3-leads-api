@@ -169,7 +169,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [sort, setSort] = useState<'received_at' | 'id'>('received_at')
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
@@ -218,7 +217,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     return {
       page: targetPage,
       per_page: perPage,
-      sort,
+      sort: 'received_at',
       direction,
       ...(from || to ? { from, to } : { period }),
     }
@@ -232,7 +231,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [])
 
   const leads = data?.items ?? []
-  const visibleValue = leads.reduce((total, lead) => total + numberValue(lead.valor_liberado), 0)
   const eligibleCount = leads.filter((lead) => boolLabel(lead.elegivel_emprestimo) === 'Sim').length
 
   return (
@@ -260,14 +258,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-        <section className="mb-6 grid gap-3 md:grid-cols-3">
+        <section className="mb-6 grid gap-3 md:grid-cols-2">
           <Metric label="Total filtrado" value={formatInteger(data?.total ?? 0)} />
           <Metric label="Elegíveis na página" value={formatInteger(eligibleCount)} />
-          <Metric label="Valor na página" value={formatBRL(visibleValue)} />
         </section>
 
         <section className="panel mb-5 p-4">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_0.85fr_0.85fr_auto_auto]">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_0.9fr_auto_auto]">
             <div>
               <label className="field-label" htmlFor="period">
                 Periodo
@@ -302,22 +299,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
 
             <div>
-              <label className="field-label" htmlFor="sort">
-                Ordenar por
+              <label className="field-label" htmlFor="order">
+                Ordenação
               </label>
-              <select id="sort" className="field" value={sort} onChange={(event) => setSort(event.target.value as 'received_at' | 'id')}>
-                <option value="received_at">Recebimento</option>
-                <option value="id">ID</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="direction">
-                Direção
-              </label>
-              <select id="direction" className="field" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
-                <option value="desc">Desc</option>
-                <option value="asc">Asc</option>
+              <select id="order" className="field" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
+                <option value="desc">Mais recente</option>
+                <option value="asc">Mais antigo</option>
               </select>
             </div>
 

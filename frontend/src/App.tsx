@@ -79,8 +79,8 @@ function App() {
 function LoadingScreen() {
   return (
     <main className="grid min-h-screen place-items-center px-4">
-      <div className="panel flex items-center gap-3 px-5 py-4 text-sm text-muted">
-        <Loader2 className="size-4 animate-spin text-accent" />
+      <div className="panel flex items-center gap-3 px-5 py-4 text-base text-muted">
+        <Loader2 className="size-5 animate-spin text-accent" />
         Carregando sessão
       </div>
     </main>
@@ -114,24 +114,24 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <section className="login-shell">
-        <div className="login-brand">
-          <div className="brand-mark">
-            <ShieldCheck className="size-5" />
+        <div className="login-brand mb-6 flex flex-col items-center text-center">
+          <div className="brand-mark mb-4 rounded-full bg-soft p-3">
+            <ShieldCheck className="size-8 text-strong" />
           </div>
           <div>
-            <p className="eyebrow">Acesso interno</p>
-            <h1>Painel UY3</h1>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted">Acesso interno</p>
+            <h1 className="mt-1 text-2xl font-bold text-strong">Painel Leads UY3</h1>
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
-            <label className="field-label" htmlFor="email">
+            <label className="field-label text-sm font-medium" htmlFor="email">
               Email
             </label>
             <input
               id="email"
-              className="field"
+              className="field mt-1 w-full text-base"
               type="email"
               autoComplete="email"
               value={email}
@@ -141,12 +141,12 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
           </div>
 
           <div>
-            <label className="field-label" htmlFor="password">
+            <label className="field-label text-sm font-medium" htmlFor="password">
               Senha
             </label>
             <input
               id="password"
-              className="field"
+              className="field mt-1 w-full text-base"
               type="password"
               autoComplete="current-password"
               value={password}
@@ -155,10 +155,10 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
             />
           </div>
 
-          {error && <div className="alert">{error}</div>}
+          {error && <div className="alert text-sm">{error}</div>}
 
-          <button className="button button-primary w-full" type="submit" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+          <button className="button button-primary w-full text-base font-medium" type="submit" disabled={loading}>
+            {loading ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
             Entrar
           </button>
         </form>
@@ -226,32 +226,30 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   useEffect(() => {
-    // A carga inicial sincroniza a tela com a API assim que o dashboard monta.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchLeads(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const leads = data?.items ?? []
-  const eligibleCount = leads.filter((lead) => boolLabel(lead.elegivel_emprestimo) === 'Sim').length
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen text-base">
       <header className="topbar">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="brand-mark">
-              <Database className="size-5" />
+              <Database className="size-6" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-strong">Painel UY3</h1>
-              <p className="hidden text-xs text-muted sm:block">Leads recebidos via webhook</p>
+              <h1 className="text-xl font-bold text-strong">Painel UY3</h1>
+              <p className="hidden text-sm text-muted sm:block">Leads recebidos via webhook</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted md:inline">{user.email}</span>
-            <button className="button button-muted" type="button" onClick={onLogout}>
+          <div className="flex items-center gap-4">
+            <span className="hidden text-sm font-medium text-muted md:inline">{user.email}</span>
+            <button className="button button-muted text-sm font-medium" type="button" onClick={onLogout}>
               <LogOut className="size-4" />
               Sair
             </button>
@@ -260,28 +258,29 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-        <section className="mb-6 grid gap-4 md:grid-cols-2">
-          <Metric label="Total filtrado" value={formatInteger(data?.total ?? 0)} />
-          <Metric label="Elegíveis na página" value={formatInteger(eligibleCount)} />
-        </section>
-
         <section className="panel mb-6">
-          <div className="border-b border-border bg-soft/30 px-5 py-3">
-            <h2 className="flex items-center gap-2 text-sm font-medium text-strong">
-              <Filter className="size-4 text-muted" />
+          <div className="flex items-center justify-between border-b border-border bg-soft/30 px-5 py-4">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-strong">
+              <Filter className="size-5 text-muted" />
               Filtros e Exportação
             </h2>
+            <div className="flex items-center gap-2 text-sm font-medium text-muted">
+              <span>Total filtrado:</span>
+              <span className="rounded-md bg-border/50 px-2 py-0.5 text-strong">
+                {formatInteger(data?.total ?? 0)}
+              </span>
+            </div>
           </div>
           
           <div className="p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-end">
               <div className="min-w-[200px] flex-1">
-                <label className="field-label" htmlFor="interval">
+                <label className="field-label mb-1 block text-sm font-medium" htmlFor="interval">
                   Intervalo
                 </label>
                 <select
                   id="interval"
-                  className="field"
+                  className="field w-full text-sm"
                   value={interval}
                   onChange={(event) => {
                     const nextInterval = event.target.value
@@ -301,33 +300,33 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </div>
 
               <div className="min-w-[200px] flex-1">
-                <label className="field-label" htmlFor="order">
+                <label className="field-label mb-1 block text-sm font-medium" htmlFor="order">
                   Ordenação
                 </label>
-                <select id="order" className="field" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
+                <select id="order" className="field w-full text-sm" value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
                   <option value="desc">Mais recente</option>
                   <option value="asc">Mais antigo</option>
                 </select>
               </div>
 
               {interval === 'custom' && (
-                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-1 sm:flex-row sm:items-end md:min-w-[340px]">
+                <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-1 sm:flex-row sm:items-end md:min-w-[340px]">
                   <div className="flex-1">
-                    <label className="field-label" htmlFor="from">
+                    <label className="field-label mb-1 block text-sm font-medium" htmlFor="from">
                       De
                     </label>
-                    <input id="from" className="field" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                    <input id="from" className="field w-full text-sm" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
                   </div>
 
                   <div className="flex-1">
-                    <label className="field-label" htmlFor="to">
+                    <label className="field-label mb-1 block text-sm font-medium" htmlFor="to">
                       Até
                     </label>
-                    <input id="to" className="field" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                    <input id="to" className="field w-full text-sm" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
                   </div>
 
                   <button
-                    className="button button-muted mt-2 sm:mt-0"
+                    className="button button-muted mt-2 text-sm sm:mt-0"
                     type="button"
                     onClick={() => {
                       setFrom('')
@@ -343,12 +342,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
 
             <div className="mt-6 flex flex-col-reverse items-center justify-end gap-3 border-t border-border pt-5 sm:flex-row">
-              <button className="button button-muted w-full sm:w-auto" type="button" onClick={() => void handleExport()} disabled={exporting}>
+              <button className="button button-muted w-full text-sm font-medium sm:w-auto" type="button" onClick={() => void handleExport()} disabled={exporting}>
                 {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                 Exportar CSV
               </button>
               
-              <button className="button button-primary w-full sm:w-auto" type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
+              <button className="button button-primary w-full text-sm font-medium sm:w-auto" type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
                 {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
                 Buscar Leads
               </button>
@@ -356,29 +355,29 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
         </section>
 
-        {error && <div className="alert mb-5">{error}</div>}
+        {error && <div className="alert mb-5 text-sm">{error}</div>}
 
         <section className="panel overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
+            <table className="data-table w-full text-sm">
+              <thead className="text-left font-semibold text-muted">
                 <tr>
-                  <th>ID</th>
-                  <th>Recebido em</th>
-                  <th>CPF</th>
-                  <th>Nome</th>
-                  <th>Status</th>
-                  <th>Elegivel</th>
-                  <th className="text-right">Valor liberado</th>
-                  <th className="text-right">Margem</th>
-                  <th className="text-right">Parcelas</th>
+                  <th className="py-3 pr-4">ID</th>
+                  <th className="px-4 py-3">Recebido em</th>
+                  <th className="px-4 py-3">CPF</th>
+                  <th className="px-4 py-3">Nome</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Elegível</th>
+                  <th className="px-4 py-3 text-right">Valor liberado</th>
+                  <th className="px-4 py-3 text-right">Margem</th>
+                  <th className="py-3 pl-4 text-right">Parcelas</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border">
                 {loading && (
                   <tr>
-                    <td className="table-state" colSpan={9}>
-                      <Loader2 className="mr-2 inline size-4 animate-spin text-accent" />
+                    <td className="table-state py-8 text-center text-muted" colSpan={9}>
+                      <Loader2 className="mr-2 inline size-5 animate-spin text-accent" />
                       Carregando leads
                     </td>
                   </tr>
@@ -386,7 +385,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
                 {!loading && leads.length === 0 && (
                   <tr>
-                    <td className="table-state" colSpan={9}>
+                    <td className="table-state py-8 text-center text-muted" colSpan={9}>
                       Nenhum lead encontrado para os filtros selecionados.
                     </td>
                   </tr>
@@ -400,13 +399,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-border bg-soft px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 text-xs text-muted">
+          <div className="flex flex-col gap-4 border-t border-border bg-soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 text-sm font-medium text-muted">
               <span>
                 Página {data?.current_page ?? 1} de {Math.max(data?.total_pages ?? 1, 1)}
               </span>
               <select
-                className="field h-9 w-24"
+                className="field h-9 w-20 text-sm"
                 value={perPage}
                 onChange={(event) => {
                   setPerPage(Number(event.target.value))
@@ -420,11 +419,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <button className="button button-muted" type="button" disabled={!data?.has_previous || loading} onClick={() => void fetchLeads(page - 1)}>
+              <button className="button button-muted text-sm font-medium" type="button" disabled={!data?.has_previous || loading} onClick={() => void fetchLeads(page - 1)}>
                 <ChevronLeft className="size-4" />
                 Anterior
               </button>
-              <button className="button button-muted" type="button" disabled={!data?.has_next || loading} onClick={() => void fetchLeads(page + 1)}>
+              <button className="button button-muted text-sm font-medium" type="button" disabled={!data?.has_next || loading} onClick={() => void fetchLeads(page + 1)}>
                 Próxima
                 <ChevronRight className="size-4" />
               </button>
@@ -436,31 +435,22 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="panel p-4">
-      <p className="text-xs font-medium uppercase text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-strong">{value}</p>
-    </div>
-  )
-}
-
 function LeadRow({ lead }: { lead: Lead }) {
   return (
-    <tr>
-      <td className="font-mono text-xs text-muted">#{lead.id}</td>
-      <td className="whitespace-nowrap">{formatDateTime(lead.received_at)}</td>
-      <td className="font-mono text-xs">{formatCPF(lead.cpf)}</td>
-      <td className="min-w-52">{lead.nome_trabalhador || '-'}</td>
-      <td>
-        <span className="pill">{lead.status || '-'}</span>
+    <tr className="hover:bg-soft/50">
+      <td className="py-3 pr-4 font-mono text-xs text-muted">#{lead.id}</td>
+      <td className="whitespace-nowrap px-4 py-3">{formatDateTime(lead.received_at)}</td>
+      <td className="px-4 py-3 font-mono text-sm">{formatCPF(lead.cpf)}</td>
+      <td className="min-w-52 px-4 py-3 font-medium">{lead.nome_trabalhador || '-'}</td>
+      <td className="px-4 py-3">
+        <span className="pill text-xs font-medium">{lead.status || '-'}</span>
       </td>
-      <td>
-        <span className={boolLabel(lead.elegivel_emprestimo) === 'Sim' ? 'pill pill-ok' : 'pill pill-muted'}>{boolLabel(lead.elegivel_emprestimo)}</span>
+      <td className="px-4 py-3">
+        <span className={boolLabel(lead.elegivel_emprestimo) === 'Sim' ? 'pill pill-ok text-xs font-medium' : 'pill pill-muted text-xs font-medium'}>{boolLabel(lead.elegivel_emprestimo)}</span>
       </td>
-      <td className="whitespace-nowrap text-right font-medium">{formatBRL(lead.valor_liberado)}</td>
-      <td className="whitespace-nowrap text-right">{formatBRL(lead.margem_disponivel)}</td>
-      <td className="text-right">{lead.numero_parcelas || '-'}</td>
+      <td className="whitespace-nowrap px-4 py-3 text-right font-medium">{formatBRL(lead.valor_liberado)}</td>
+      <td className="whitespace-nowrap px-4 py-3 text-right">{formatBRL(lead.margem_disponivel)}</td>
+      <td className="py-3 pl-4 text-right">{lead.numero_parcelas || '-'}</td>
     </tr>
   )
 }

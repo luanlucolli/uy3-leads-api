@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,7 +106,6 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		FROM leads
 		%s
 		ORDER BY %s %s
-		LIMIT 10000
 	`, where, filters.Sort, filters.Direction)
 
 	rows, err := h.db.QueryContext(r.Context(), query, args...)
@@ -136,6 +136,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		lead, err := scanLead(rows)
 		if err != nil {
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 			return
 		}
 		if err := csvWriter.Write([]string{
@@ -156,18 +157,24 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			booleanLabel(lead.PEPCodigo),
 			booleanLabel(lead.ActiveFGTSDebts),
 		}); err != nil {
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 			return
 		}
 		rowsProcessed++
 		if rowsProcessed%500 == 0 {
 			csvWriter.Flush()
 			if err := csvWriter.Error(); err != nil {
+				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 				return
 			}
 			if canFlush {
 				flusher.Flush()
 			}
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Printf("Erro na exportação CSV após streaming: %v", err)
 	}
 }
 
@@ -251,28 +258,40 @@ func scanLead(scanner leadScanner) (models.Lead, error) {
 }
 
 func buildLeadWhere(filters models.LeadFilters) (string, []any) {
+	loc := time.FixedZone("BRT", -3*3600)
 	clauses := make([]string, 0, 2)
 	args := make([]any, 0, 2)
 
 	if filters.From != "" || filters.To != "" {
 		if filters.From != "" {
-			clauses = append(clauses, "date(datetime(received_at, '-3 hours')) >= ?")
-			args = append(args, filters.From)
+			fromTime, err := time.ParseInLocation("2006-01-02 15:04:05", filters.From+" 00:00:00", loc)
+			if err == nil {
+				clauses = append(clauses, "received_at >= ?")
+				args = append(args, fromTime.UTC().Format("2006-01-02 15:04:05"))
+			}
 		}
 		if filters.To != "" {
-			clauses = append(clauses, "date(datetime(received_at, '-3 hours')) <= ?")
-			args = append(args, filters.To)
+			toTime, err := time.ParseInLocation("2006-01-02 15:04:05", filters.To+" 23:59:59", loc)
+			if err == nil {
+				clauses = append(clauses, "received_at <= ?")
+				args = append(args, toTime.UTC().Format("2006-01-02 15:04:05"))
+			}
 		}
 	} else {
+		now := time.Now().In(loc)
 		switch filters.Period {
 		case "24h":
-			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-1 day')")
+			clauses = append(clauses, "received_at >= ?")
+			args = append(args, now.Add(-24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
 		case "7d":
-			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-7 days')")
+			clauses = append(clauses, "received_at >= ?")
+			args = append(args, now.Add(-7*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
 		case "30d":
-			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-30 days')")
+			clauses = append(clauses, "received_at >= ?")
+			args = append(args, now.Add(-30*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
 		case "90d":
-			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-90 days')")
+			clauses = append(clauses, "received_at >= ?")
+			args = append(args, now.Add(-90*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
 		}
 	}
 

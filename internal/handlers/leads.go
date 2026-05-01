@@ -105,6 +105,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		FROM leads
 		%s
 		ORDER BY %s %s
+		LIMIT 10000
 	`, where, filters.Sort, filters.Direction)
 
 	rows, err := h.db.QueryContext(r.Context(), query, args...)
@@ -131,6 +132,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	flusher, canFlush := w.(http.Flusher)
+	rowsProcessed := 0
 	for rows.Next() {
 		lead, err := scanLead(rows)
 		if err != nil {
@@ -156,12 +158,15 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		}); err != nil {
 			return
 		}
-		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			return
-		}
-		if canFlush {
-			flusher.Flush()
+		rowsProcessed++
+		if rowsProcessed%500 == 0 {
+			csvWriter.Flush()
+			if err := csvWriter.Error(); err != nil {
+				return
+			}
+			if canFlush {
+				flusher.Flush()
+			}
 		}
 	}
 }
@@ -251,26 +256,23 @@ func buildLeadWhere(filters models.LeadFilters) (string, []any) {
 
 	if filters.From != "" || filters.To != "" {
 		if filters.From != "" {
-			clauses = append(clauses, "received_at >= ?")
-			args = append(args, filters.From+" 00:00:00")
+			clauses = append(clauses, "date(datetime(received_at, '-3 hours')) >= ?")
+			args = append(args, filters.From)
 		}
 		if filters.To != "" {
-			to, err := time.Parse("2006-01-02", filters.To)
-			if err == nil {
-				clauses = append(clauses, "received_at < ?")
-				args = append(args, to.AddDate(0, 0, 1).Format("2006-01-02")+" 00:00:00")
-			}
+			clauses = append(clauses, "date(datetime(received_at, '-3 hours')) <= ?")
+			args = append(args, filters.To)
 		}
 	} else {
 		switch filters.Period {
 		case "24h":
-			clauses = append(clauses, "received_at >= datetime('now', '-1 day')")
+			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-1 day')")
 		case "7d":
-			clauses = append(clauses, "received_at >= datetime('now', '-7 days')")
+			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-7 days')")
 		case "30d":
-			clauses = append(clauses, "received_at >= datetime('now', '-30 days')")
+			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-30 days')")
 		case "90d":
-			clauses = append(clauses, "received_at >= datetime('now', '-90 days')")
+			clauses = append(clauses, "datetime(received_at, '-3 hours') >= datetime('now', '-3 hours', '-90 days')")
 		}
 	}
 

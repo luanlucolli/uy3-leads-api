@@ -307,14 +307,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-        
-      {/* ÁREA DE BUSCA */}
+
+        {/* ÁREA DE BUSCA */}
         <section className={`${panelClass} mb-8 rounded-[8px] p-5`}>
           <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-muted uppercase tracking-widest">
             <Filter className="size-4" />
             Filtros de Busca
           </h2>
-          
+
           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="min-w-[160px] flex-1">
               <label className={fieldLabelClass} htmlFor="interval">
@@ -400,10 +400,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
           </div>
 
-          <button 
-            className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`} 
-            type="button" 
-            onClick={() => void handleExport()} 
+          <button
+            className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`}
+            type="button"
+            onClick={() => void handleExport()}
             disabled={exporting || !hasLeads || loading}
           >
             {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}

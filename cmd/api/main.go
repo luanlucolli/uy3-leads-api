@@ -79,6 +79,7 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Compress(5, "text/html", "text/css", "application/javascript", "application/json", "text/csv"))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -13,6 +13,8 @@ import (
 	"github.com/luanlucolli/uy3-leads-api/internal/models"
 )
 
+var brtLocation = time.FixedZone("BRT", -3*3600)
+
 type LeadsHandler struct {
 	db *sql.DB
 }
@@ -156,7 +158,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 		batchCount := 0
 		for rows.Next() {
-			lead, err := scanLead(rows)
+			lead, err := scanLeadRaw(rows)
 			if err != nil {
 				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 				rows.Close()
@@ -237,6 +239,14 @@ type leadScanner interface {
 }
 
 func scanLead(scanner leadScanner) (models.Lead, error) {
+	return scanLeadWithOptions(scanner, true)
+}
+
+func scanLeadRaw(scanner leadScanner) (models.Lead, error) {
+	return scanLeadWithOptions(scanner, false)
+}
+
+func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.Lead, error) {
 	var lead models.Lead
 	var cpf, nome, status, elegivel, validade, nascimento, admissao sql.NullString
 	var isMEI, judicial, pep, fgts, typeWebhook, rawPayload, receivedAt sql.NullString
@@ -286,6 +296,9 @@ func scanLead(scanner leadScanner) (models.Lead, error) {
 	lead.RawPayload = nullString(rawPayload)
 	lead.Exportado = nullInt(exportado)
 	lead.ReceivedAt = nullString(receivedAt)
+	if normalizeReceivedAt {
+		lead.ReceivedAt = formatDateForAPI(lead.ReceivedAt)
+	}
 
 	return lead, nil
 }
@@ -391,10 +404,11 @@ func formatDateBR(raw string, includeTime bool) string {
 	}
 
 	for _, layout := range layouts {
-		parsed, err := time.Parse(layout, raw)
+		parsed, err := parseUTCDate(raw, layout)
 		if err != nil {
 			continue
 		}
+		parsed = parsed.In(brtLocation)
 		if includeTime && hasTime(layout, raw) {
 			return parsed.Format("02/01/2006 15:04:05")
 		}
@@ -406,4 +420,45 @@ func formatDateBR(raw string, includeTime bool) string {
 
 func hasTime(layout, raw string) bool {
 	return strings.Contains(layout, "15:04") || strings.Contains(raw, "T") || strings.Contains(raw, ":")
+}
+
+func formatDateForAPI(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	}
+
+	for _, layout := range layouts {
+		parsed, err := parseUTCDate(raw, layout)
+		if err != nil {
+			continue
+		}
+		parsed = parsed.In(brtLocation)
+		if hasTime(layout, raw) {
+			return parsed.Format("2006-01-02 15:04:05")
+		}
+		return parsed.Format("2006-01-02")
+	}
+
+	return raw
+}
+
+func parseUTCDate(raw, layout string) (time.Time, error) {
+	switch layout {
+	case time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999999-07:00":
+		return time.Parse(layout, raw)
+	default:
+		return time.ParseInLocation(layout, raw, time.UTC)
+	}
 }

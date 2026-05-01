@@ -304,7 +304,7 @@ func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.
 }
 
 func buildLeadWhere(filters models.LeadFilters) (string, []any) {
-	loc := time.FixedZone("BRT", -3*3600)
+	loc := brtLocation
 	clauses := make([]string, 0, 2)
 	args := make([]any, 0, 2)
 
@@ -330,14 +330,17 @@ func buildLeadWhere(filters models.LeadFilters) (string, []any) {
 			clauses = append(clauses, "received_at >= ?")
 			args = append(args, now.Add(-24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
 		case "7d":
+			cutoff := startOfDayInLocation(now.AddDate(0, 0, -7), loc)
 			clauses = append(clauses, "received_at >= ?")
-			args = append(args, now.Add(-7*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
+			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
 		case "30d":
+			cutoff := startOfDayInLocation(now.AddDate(0, 0, -30), loc)
 			clauses = append(clauses, "received_at >= ?")
-			args = append(args, now.Add(-30*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
+			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
 		case "90d":
+			cutoff := startOfDayInLocation(now.AddDate(0, 0, -90), loc)
 			clauses = append(clauses, "received_at >= ?")
-			args = append(args, now.Add(-90*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
+			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
 		}
 	}
 
@@ -345,6 +348,10 @@ func buildLeadWhere(filters models.LeadFilters) (string, []any) {
 		return "", args
 	}
 	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func startOfDayInLocation(value time.Time, loc *time.Location) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, loc)
 }
 
 func nullString(value sql.NullString) string {

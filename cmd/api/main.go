@@ -25,6 +25,9 @@ import (
 )
 
 func main() {
+	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
@@ -60,14 +63,25 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	serverErr := make(chan error, 1)
 	go func() {
 		log.Printf("uy3-leads-api listening on :%s", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
+			serverErr <- err
 		}
 	}()
 
-	waitForShutdown(server)
+	select {
+	case err := <-serverErr:
+		log.Fatalf("server: %v", err)
+	case <-shutdownCtx.Done():
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("server shutdown: %v", err)
+	}
 }
 
 func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) http.Handler {
@@ -125,7 +139,10 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 func spaHandler() http.HandlerFunc {
 	dist, err := fs.Sub(frontend.Files, "dist")
 	if err != nil {
-		log.Fatalf("frontend dist: %v", err)
+		log.Printf("erro ao carregar frontend: %v", err)
+		return func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Frontend indisponível", http.StatusInternalServerError)
+		}
 	}
 
 	fileServer := http.FileServer(http.FS(dist))
@@ -149,24 +166,12 @@ func spaHandler() http.HandlerFunc {
 
 		index, err := fs.ReadFile(dist, "index.html")
 		if err != nil {
-			http.Error(w, "frontend unavailable", http.StatusInternalServerError)
+			http.Error(w, "Frontend indisponível", http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(index)
-	}
-}
-
-func waitForShutdown(server *http.Server) {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("server shutdown: %v", err)
 	}
 }

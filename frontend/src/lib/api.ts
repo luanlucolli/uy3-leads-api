@@ -3,35 +3,8 @@ export interface User {
   email: string
 }
 
-export interface Lead {
-  id: number
-  cpf: string
-  nome_trabalhador: string
-  status: string
-  elegivel_emprestimo: string
-  valor_liberado: number
-  margem_disponivel: number
-  numero_parcelas: number
-  data_hora_validade_solicitacao: string
-  data_nascimento: string
-  data_admissao: string
-  is_mei: string
-  is_judicial_recovery: string
-  pep_codigo: string
-  active_fgts_debts: string
-  type_webhook: string
-  exportado: number
-  received_at: string
-}
-
-export interface LeadsResponse {
-  items: Lead[]
+export interface LeadsSummaryResponse {
   total: number
-  current_page: number
-  per_page: number
-  total_pages: number
-  has_next: boolean
-  has_previous: boolean
 }
 
 export interface LeadFilters {
@@ -126,7 +99,7 @@ export const api = {
   },
 
   leads(filters: LeadFilters) {
-    return request<LeadsResponse>(`/leads${buildQuery(filters)}`)
+    return request<LeadsSummaryResponse>(`/leads${buildQuery(filters)}`)
   },
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type WebhookHandler struct {
@@ -62,7 +63,14 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		RawPayload:                  string(raw),
 	}
 
-	result, err := h.db.ExecContext(r.Context(), `
+	tx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(r.Context(), `
 		INSERT INTO leads (
 			cpf, nome_trabalhador, status, elegivel_emprestimo,
 			valor_liberado, margem_disponivel, numero_parcelas,
@@ -78,6 +86,22 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		lead.TypeWebhook, lead.RawPayload,
 	)
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
+		return
+	}
+
+	summaryDate := time.Now().In(time.FixedZone("BRT", -3*3600)).Format("2006-01-02")
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO leads_summary_daily (data, quantidade)
+		VALUES (?, 1)
+		ON CONFLICT(data) DO UPDATE
+		SET quantidade = leads_summary_daily.quantidade + 1
+	`, summaryDate); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao atualizar resumo diario")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
 		return
 	}

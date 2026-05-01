@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import {
-  ChevronLeft,
-  ChevronRight,
   Database,
   Download,
   Filter,
@@ -19,9 +17,8 @@ import {
   downloadLeadsExport,
   getToken,
   setToken,
-  type Lead,
   type LeadFilters,
-  type LeadsResponse,
+  type LeadsSummaryResponse,
   type User,
 } from './lib/api'
 
@@ -57,9 +54,6 @@ const buttonMutedClass =
 
 const buttonDangerClass =
   `${buttonBaseClass} border-[rgb(239_68_68_/_38%)] bg-[linear-gradient(180deg,rgb(239_68_68_/_18%),rgb(239_68_68_/_12%))] text-[#fff4f4] hover:border-[rgb(239_68_68_/_55%)] hover:bg-[linear-gradient(180deg,rgb(239_68_68_/_26%),rgb(239_68_68_/_18%))]`
-
-const pillBaseClass =
-  'inline-flex items-center rounded-full bg-[#242b38] px-[0.55rem] py-[0.2rem] text-[0.76rem] font-bold whitespace-nowrap'
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -221,20 +215,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc')
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(20)
-  const [data, setData] = useState<LeadsResponse | null>(null)
+  const [data, setData] = useState<LeadsSummaryResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
-  async function fetchLeads(targetPage = page) {
+  async function fetchSummary() {
     setLoading(true)
 
     try {
-      const response = await api.leads(buildFilters(targetPage))
+      const response = await api.leads(buildFilters())
       setData(response)
-      setPage(response.current_page)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onLogout()
@@ -250,7 +241,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     setExporting(true)
 
     try {
-      await downloadLeadsExport(buildFilters(1))
+      await downloadLeadsExport(buildFilters())
       toast.success('Download iniciado!')
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -263,10 +254,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   }
 
-  function buildFilters(targetPage: number): LeadFilters {
+  function buildFilters(): LeadFilters {
     return {
-      page: targetPage,
-      per_page: perPage,
       sort: 'received_at',
       direction,
       ...(interval === 'custom' ? { from, to } : { period: interval }),
@@ -274,13 +263,12 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchLeads(1)
+    void fetchSummary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const leads = data?.items ?? []
-  const hasLeads = (data?.total ?? 0) > 0
+  const total = data?.total ?? 0
+  const hasLeads = total > 0
 
   return (
     <div className="min-h-screen text-base">
@@ -379,109 +367,72 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </select>
             </div>
 
-            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
+            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchSummary()} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               Buscar
             </button>
           </div>
         </section>
 
-        {/* ÁREA DE AÇÃO E RESULTADOS */}
-        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-soft border border-border text-accent">
-              <Database className="size-5" />
-            </div>
+        <section className={`${panelClass} rounded-[8px] p-5`}>
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-2xl font-bold text-text leading-none">
-                {loading ? '-' : formatInteger(data?.total ?? 0)}
+              <p className="text-xs font-bold uppercase tracking-widest text-muted">Painel de Métricas</p>
+              <h2 className="mt-2 text-2xl font-bold text-text">Volume consolidado de leads</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                A interface mostra apenas o total agregado do período selecionado. Para detalhamento completo dos registros, use o download do CSV.
               </p>
-              <p className="text-xs font-medium text-muted uppercase tracking-wider mt-1">Leads Encontrados</p>
-            </div>
-          </div>
-
-          <button
-            className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`}
-            type="button"
-            onClick={() => void handleExport()}
-            disabled={exporting || !hasLeads || loading}
-          >
-            {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-            Baixar CSV
-          </button>
-        </div>
-
-        {/* TABELA */}
-        <section className={`${panelClass} overflow-hidden rounded-[8px]`}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-[0.9rem]">
-              <thead className="text-left font-semibold text-muted">
-                <tr>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">ID</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Recebido em</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">CPF</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Nome</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Status</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-left text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Elegível</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-right text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Valor liberado</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-right text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Margem</th>
-                  <th className="whitespace-nowrap bg-surface-soft px-4 py-[0.85rem] text-right text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted">Parcelas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading && (
-                  <tr>
-                    <td className="h-40 py-8 text-center text-muted" colSpan={9}>
-                      <Loader2 className="mr-2 inline size-5 animate-spin text-accent" />
-                      Carregando leads
-                    </td>
-                  </tr>
-                )}
-
-                {!loading && leads.length === 0 && (
-                  <tr>
-                    <td className="h-40 py-8 text-center text-muted" colSpan={9}>
-                      Nenhum lead encontrado para os filtros selecionados.
-                    </td>
-                  </tr>
-                )}
-
-                {!loading &&
-                  leads.map((lead) => (
-                    <LeadRow key={lead.id} lead={lead} />
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col gap-4 border-t border-border bg-surface-soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 text-sm font-medium text-muted">
-              <span>
-                Página {data?.current_page ?? 1} de {Math.max(data?.total_pages ?? 1, 1)}
-              </span>
-              <select
-                className={`${fieldClass} h-9 w-20 text-sm`}
-                value={perPage}
-                onChange={(event) => {
-                  setPerPage(Number(event.target.value))
-                  setPage(1)
-                }}
-              >
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button className={`${buttonMutedClass} text-sm font-medium`} type="button" disabled={!data?.has_previous || loading} onClick={() => void fetchLeads(page - 1)}>
-                <ChevronLeft className="size-4" />
-                Anterior
-              </button>
-              <button className={`${buttonMutedClass} text-sm font-medium`} type="button" disabled={!data?.has_next || loading} onClick={() => void fetchLeads(page + 1)}>
-                Próxima
-                <ChevronRight className="size-4" />
-              </button>
+            <button
+              className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`}
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={exporting || !hasLeads || loading}
+            >
+              {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              Baixar CSV
+            </button>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
+            <div className="rounded-[8px] border border-border bg-surface-soft p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted">Total no período</p>
+                  <p className="mt-4 text-5xl font-bold leading-none text-text">
+                    {loading ? '--' : formatInteger(total)}
+                  </p>
+                  <p className="mt-3 text-sm text-muted">
+                    {loading
+                      ? 'Atualizando o resumo diário dos leads.'
+                      : hasLeads
+                        ? 'Leads consolidados para os filtros ativos.'
+                        : 'Nenhum lead encontrado para os filtros selecionados.'}
+                  </p>
+                </div>
+
+                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-border bg-[#10141b] text-accent">
+                  <Database className="size-6" />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="rounded-[8px] border border-border bg-[#10141b] p-5">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted">Período ativo</p>
+                <p className="mt-3 text-lg font-bold text-text">{describeActiveRange(interval, from, to)}</p>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  O resumo usa agregação diária para reduzir leituras na base principal.
+                </p>
+              </div>
+
+              <div className="rounded-[8px] border border-border bg-[#10141b] p-5">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted">Exportação detalhada</p>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  O CSV continua consultando os leads completos e respeita os mesmos filtros aplicados acima.
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -536,26 +487,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   )
 }
 
-function LeadRow({ lead }: { lead: Lead }) {
-  return (
-    <tr className="hover:bg-[rgb(255_255_255_/_2.5%)] transition-colors">
-      <td className="border-t border-border py-[0.85rem] px-4 align-middle font-mono text-xs text-muted">#{lead.id}</td>
-      <td className="border-t border-border whitespace-nowrap px-4 py-[0.85rem] align-middle">{formatDateTime(lead.received_at)}</td>
-      <td className="border-t border-border px-4 py-[0.85rem] align-middle font-mono text-sm">{formatCPF(lead.cpf)}</td>
-      <td className="min-w-52 border-t border-border px-4 py-[0.85rem] align-middle font-medium">{lead.nome_trabalhador || '-'}</td>
-      <td className="border-t border-border px-4 py-[0.85rem] align-middle">
-        <span className={`${pillBaseClass} text-xs font-medium`}>{lead.status || '-'}</span>
-      </td>
-      <td className="border-t border-border px-4 py-[0.85rem] align-middle">
-        <span className={boolLabel(lead.elegivel_emprestimo) === 'Sim' ? `${pillBaseClass} bg-[rgb(45_212_191_/_14%)] text-[#c8fff7] text-xs font-medium` : `${pillBaseClass} text-xs font-medium text-muted`}>{boolLabel(lead.elegivel_emprestimo)}</span>
-      </td>
-      <td className="border-t border-border whitespace-nowrap px-4 py-[0.85rem] text-right align-middle font-medium">{formatBRL(lead.valor_liberado)}</td>
-      <td className="border-t border-border whitespace-nowrap px-4 py-[0.85rem] text-right align-middle">{formatBRL(lead.margem_disponivel)}</td>
-      <td className="border-t border-border px-4 py-[0.85rem] text-right align-middle">{lead.numero_parcelas || '-'}</td>
-    </tr>
-  )
-}
-
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) {
     return error.message
@@ -563,53 +494,36 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
-function numberValue(value: number | string | null | undefined) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function formatBRL(value: number | string | null | undefined) {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(numberValue(value))
-}
-
 function formatInteger(value: number) {
   return new Intl.NumberFormat('pt-BR').format(value)
 }
 
-function formatDateTime(value: string) {
-  if (!value) {
-    return '-'
+function describeActiveRange(interval: string, from: string, to: string) {
+  if (interval === 'custom') {
+    if (from && to) {
+      return `${from} até ${to}`
+    }
+    if (from) {
+      return `A partir de ${from}`
+    }
+    if (to) {
+      return `Até ${to}`
+    }
+    return 'Personalizado'
   }
 
-  const date = new Date(value.replace(' ', 'T'))
-  if (Number.isNaN(date.getTime())) {
-    return value
+  switch (interval) {
+    case '24h':
+      return 'Últimas 24 horas'
+    case '7d':
+      return 'Últimos 7 dias'
+    case '30d':
+      return 'Últimos 30 dias'
+    case '90d':
+      return 'Últimos 90 dias'
+    default:
+      return 'Todo o histórico'
   }
-
-  return date.toLocaleString('pt-BR')
-}
-
-function formatCPF(value: string) {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length !== 11) {
-    return value || '-'
-  }
-  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
-}
-
-function boolLabel(value: string) {
-  const normalized = String(value ?? '').trim().toLowerCase()
-
-  if (['true', '1', 'sim', 's', 'yes'].includes(normalized)) {
-    return 'Sim'
-  }
-  if (['false', '0', 'nao', 'não', 'n', 'no'].includes(normalized)) {
-    return 'Não'
-  }
-  return value || '-'
 }
 
 export default App

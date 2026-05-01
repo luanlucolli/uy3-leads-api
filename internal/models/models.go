@@ -22,25 +22,25 @@ type User struct {
 }
 
 type Lead struct {
-	ID                         int64   `json:"id"`
-	CPF                        string  `json:"cpf"`
-	NomeTrabalhador            string  `json:"nome_trabalhador"`
-	Status                     string  `json:"status"`
-	ElegivelEmprestimo         string  `json:"elegivel_emprestimo"`
-	ValorLiberado              float64 `json:"valor_liberado"`
-	MargemDisponivel           float64 `json:"margem_disponivel"`
-	NumeroParcelas             int64   `json:"numero_parcelas"`
+	ID                          int64   `json:"id"`
+	CPF                         string  `json:"cpf"`
+	NomeTrabalhador             string  `json:"nome_trabalhador"`
+	Status                      string  `json:"status"`
+	ElegivelEmprestimo          string  `json:"elegivel_emprestimo"`
+	ValorLiberado               float64 `json:"valor_liberado"`
+	MargemDisponivel            float64 `json:"margem_disponivel"`
+	NumeroParcelas              int64   `json:"numero_parcelas"`
 	DataHoraValidadeSolicitacao string  `json:"data_hora_validade_solicitacao"`
-	DataNascimento             string  `json:"data_nascimento"`
-	DataAdmissao               string  `json:"data_admissao"`
-	IsMEI                      string  `json:"is_mei"`
-	IsJudicialRecovery         string  `json:"is_judicial_recovery"`
-	PEPCodigo                  string  `json:"pep_codigo"`
-	ActiveFGTSDebts            string  `json:"active_fgts_debts"`
-	TypeWebhook                string  `json:"type_webhook"`
-	RawPayload                 string  `json:"raw_payload,omitempty"`
-	Exportado                  int64   `json:"exportado"`
-	ReceivedAt                 string  `json:"received_at"`
+	DataNascimento              string  `json:"data_nascimento"`
+	DataAdmissao                string  `json:"data_admissao"`
+	IsMEI                       string  `json:"is_mei"`
+	IsJudicialRecovery          string  `json:"is_judicial_recovery"`
+	PEPCodigo                   string  `json:"pep_codigo"`
+	ActiveFGTSDebts             string  `json:"active_fgts_debts"`
+	TypeWebhook                 string  `json:"type_webhook"`
+	RawPayload                  string  `json:"raw_payload,omitempty"`
+	Exportado                   int64   `json:"exportado"`
+	ReceivedAt                  string  `json:"received_at"`
 }
 
 type Pagination struct {
@@ -51,6 +51,10 @@ type Pagination struct {
 	TotalPages  int    `json:"total_pages"`
 	HasNext     bool   `json:"has_next"`
 	HasPrevious bool   `json:"has_previous"`
+}
+
+type SummaryResponse struct {
+	Total int64 `json:"total"`
 }
 
 type LeadFilters struct {

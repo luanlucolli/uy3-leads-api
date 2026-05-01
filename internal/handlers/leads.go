@@ -30,64 +30,18 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	where, args := buildLeadWhere(filters)
+	where, args := buildSummaryWhere(filters)
 	var total int64
-	if err := h.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM leads"+where, args...).Scan(&total); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao contar leads")
+	if err := h.db.QueryRowContext(
+		r.Context(),
+		"SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily"+where,
+		args...,
+	).Scan(&total); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao carregar resumo de leads")
 		return
 	}
 
-	query := fmt.Sprintf(`
-		SELECT
-			id, cpf, nome_trabalhador, status, elegivel_emprestimo,
-			valor_liberado, margem_disponivel, numero_parcelas,
-			data_hora_validade_solicitacao, data_nascimento, data_admissao,
-			is_mei, is_judicial_recovery, pep_codigo, active_fgts_debts,
-			type_webhook, raw_payload, exportado, received_at
-		FROM leads
-		%s
-		ORDER BY %s %s
-		LIMIT ? OFFSET ?
-	`, where, filters.Sort, filters.Direction)
-
-	listArgs := append([]any{}, args...)
-	listArgs = append(listArgs, filters.PerPage, filters.Offset())
-
-	rows, err := h.db.QueryContext(r.Context(), query, listArgs...)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao listar leads")
-		return
-	}
-	defer rows.Close()
-
-	items := make([]models.Lead, 0, filters.PerPage)
-	for rows.Next() {
-		lead, err := scanLead(rows)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "erro ao ler lead")
-			return
-		}
-		items = append(items, lead)
-	}
-	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao listar leads")
-		return
-	}
-
-	totalPages := 0
-	if total > 0 {
-		totalPages = int((total + int64(filters.PerPage) - 1) / int64(filters.PerPage))
-	}
-
-	writeJSON(w, http.StatusOK, models.Pagination{
-		Items:       items,
-		Total:       total,
-		CurrentPage: filters.Page,
-		PerPage:     filters.PerPage,
-		TotalPages:  totalPages,
-		HasNext:     filters.Page < totalPages,
-		HasPrevious: filters.Page > 1,
-	})
+	writeJSON(w, http.StatusOK, models.SummaryResponse{Total: total})
 }
 
 func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
@@ -404,6 +358,48 @@ func buildLeadWhere(filters models.LeadFilters) (string, []any) {
 		return "", args
 	}
 	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func buildSummaryWhere(filters models.LeadFilters) (string, []any) {
+	fromDate, toDate := summaryDateRange(filters, time.Now().In(brtLocation))
+	clauses := make([]string, 0, 2)
+	args := make([]any, 0, 2)
+
+	if fromDate != "" {
+		clauses = append(clauses, "data >= ?")
+		args = append(args, fromDate)
+	}
+	if toDate != "" {
+		clauses = append(clauses, "data <= ?")
+		args = append(args, toDate)
+	}
+
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func summaryDateRange(filters models.LeadFilters, now time.Time) (string, string) {
+	if filters.From != "" || filters.To != "" {
+		return filters.From, filters.To
+	}
+
+	today := now.In(brtLocation).Format("2006-01-02")
+	switch filters.Period {
+	case "24h":
+		// leads_summary_daily stores BRT day buckets, so a 24h filter must include
+		// the daily buckets overlapped by the last 24 hours window.
+		return now.Add(-24 * time.Hour).In(brtLocation).Format("2006-01-02"), today
+	case "7d":
+		return now.AddDate(0, 0, -7).In(brtLocation).Format("2006-01-02"), today
+	case "30d":
+		return now.AddDate(0, 0, -30).In(brtLocation).Format("2006-01-02"), today
+	case "90d":
+		return now.AddDate(0, 0, -90).In(brtLocation).Format("2006-01-02"), today
+	default:
+		return "", ""
+	}
 }
 
 func startOfDayInLocation(value time.Time, loc *time.Location) time.Time {

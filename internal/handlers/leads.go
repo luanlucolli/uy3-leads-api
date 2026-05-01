@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -31,17 +32,30 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	where, args := buildSummaryWhere(filters)
-	var total int64
+	response := models.SummaryResponse{}
 	if err := h.db.QueryRowContext(
 		r.Context(),
 		"SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily"+where,
 		args...,
-	).Scan(&total); err != nil {
+	).Scan(&response.Total); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar resumo de leads")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, models.SummaryResponse{Total: total})
+	var lastLeadAt sql.NullString
+	err = h.db.QueryRowContext(
+		r.Context(),
+		"SELECT received_at FROM leads ORDER BY received_at DESC LIMIT 1",
+	).Scan(&lastLeadAt)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "erro ao carregar ultimo lead")
+		return
+	}
+	if lastLeadAt.Valid {
+		response.LastLeadAt = formatDateForAPI(lastLeadAt.String)
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ export interface User {
 
 export interface LeadsSummaryResponse {
   total: number
+  last_lead_at?: string
 }
 
 export interface LeadFilters {

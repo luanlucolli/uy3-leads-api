@@ -54,7 +54,8 @@ type Pagination struct {
 }
 
 type SummaryResponse struct {
-	Total int64 `json:"total"`
+	Total      int64  `json:"total"`
+	LastLeadAt string `json:"last_lead_at,omitempty"`
 }
 
 type LeadFilters struct {

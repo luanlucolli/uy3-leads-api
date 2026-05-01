@@ -214,7 +214,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [interval, setInterval] = useState('7d')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [direction, setDirection] = useState<'asc' | 'desc'>('desc')
   const [data, setData] = useState<LeadsSummaryResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -256,8 +255,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   function buildFilters(): LeadFilters {
     return {
-      sort: 'received_at',
-      direction,
       ...(interval === 'custom' ? { from, to } : { period: interval }),
     }
   }
@@ -357,16 +354,6 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </>
             )}
 
-            <div className="min-w-[160px] flex-1">
-              <label className={fieldLabelClass} htmlFor="order">
-                Ordenação
-              </label>
-              <select id="order" className={`${fieldClass} text-sm appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%20stroke%3D%22%239aa4b2%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.75rem_center] bg-[length:1.25rem_1.25rem] bg-no-repeat pr-10`} value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
-                <option value="desc">Mais recente</option>
-                <option value="asc">Mais antigo</option>
-              </select>
-            </div>
-
             <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchSummary()} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               Buscar
@@ -378,9 +365,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-muted">Painel de Métricas</p>
-              <h2 className="mt-2 text-2xl font-bold text-text">Volume consolidado de leads</h2>
+              <h2 className="mt-2 text-2xl font-bold text-text">Leads recebidos</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                A interface mostra apenas o total agregado do período selecionado. Para detalhamento completo dos registros, use o download do CSV.
+                Acompanhe o fluxo de recebimento de leads da UY3.
               </p>
             </div>
 
@@ -396,7 +383,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
-            <div className="rounded-[8px] border border-border bg-surface-soft p-6">
+            <div className="rounded-[8px] border border-border bg-surface-soft p-6 flex flex-col justify-between">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-muted">Total no período</p>
@@ -405,34 +392,29 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
                   </p>
                   <p className="mt-3 text-sm text-muted">
                     {loading
-                      ? 'Atualizando o resumo diário dos leads.'
+                      ? 'Carregando métricas...'
                       : hasLeads
-                        ? 'Leads consolidados para os filtros ativos.'
-                        : 'Nenhum lead encontrado para os filtros selecionados.'}
+                        ? 'Leads processados no período.'
+                        : 'Nenhum lead encontrado para os filtros.'}
                   </p>
                 </div>
 
-                <div className="flex h-14 w-14 items-center justify-center rounded-full border border-border bg-[#10141b] text-accent">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-border bg-[#10141b] text-accent">
                   <Database className="size-6" />
                 </div>
               </div>
+
+              <div className="mt-6 flex items-center gap-2 border-t border-[rgb(255_255_255_/_5%)] pt-4">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted">Último recebimento:</span>
+                <span className="text-sm font-medium text-[#d7dde6]">
+                  {loading ? '--' : data?.last_lead_at ? formatDateTime(data.last_lead_at) : 'Nenhum registro'}
+                </span>
+              </div>
             </div>
 
-            <div className="grid gap-4">
-              <div className="rounded-[8px] border border-border bg-[#10141b] p-5">
-                <p className="text-xs font-bold uppercase tracking-widest text-muted">Período ativo</p>
-                <p className="mt-3 text-lg font-bold text-text">{describeActiveRange(interval, from, to)}</p>
-                <p className="mt-2 text-sm leading-6 text-muted">
-                  O resumo usa agregação diária para reduzir leituras na base principal.
-                </p>
-              </div>
-
-              <div className="rounded-[8px] border border-border bg-[#10141b] p-5">
-                <p className="text-xs font-bold uppercase tracking-widest text-muted">Exportação detalhada</p>
-                <p className="mt-3 text-sm leading-6 text-muted">
-                  O CSV continua consultando os leads completos e respeita os mesmos filtros aplicados acima.
-                </p>
-              </div>
+            <div className="rounded-[8px] border border-border bg-[#10141b] p-6 flex flex-col justify-center">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted">Filtro de Data Ativo</p>
+              <p className="mt-3 text-lg font-bold text-text">{describeActiveRange(interval, from, to)}</p>
             </div>
           </div>
         </section>
@@ -496,6 +478,25 @@ function errorMessage(error: unknown, fallback: string) {
 
 function formatInteger(value: number) {
   return new Intl.NumberFormat('pt-BR').format(value)
+}
+
+function formatDateTime(value: string) {
+  if (!value) {
+    return '-'
+  }
+
+  const normalized = value.trim()
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2}:\d{2})$/)
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]} ${match[4]}`
+  }
+
+  const date = new Date(normalized.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) {
+    return normalized
+  }
+
+  return date.toLocaleString('pt-BR')
 }
 
 function describeActiveRange(interval: string, from: string, to: string) {

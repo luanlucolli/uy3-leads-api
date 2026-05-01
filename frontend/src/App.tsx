@@ -31,6 +31,22 @@ const periods = [
   { value: 'custom', label: 'Personalizado' },
 ]
 
+type DashboardInterval = (typeof periods)[number]['value']
+
+type DashboardFilters = {
+  interval: DashboardInterval
+  from: string
+  to: string
+}
+
+const dashboardFiltersStorageKey = 'uy3_dashboard_filters'
+const periodValues = new Set<DashboardInterval>(periods.map((item) => item.value))
+const defaultDashboardFilters: DashboardFilters = {
+  interval: '7d',
+  from: '',
+  to: '',
+}
+
 const panelClass =
   'border border-border bg-[rgb(21_25_34_/_88%)] shadow-[inset_0_1px_0_rgb(255_255_255_/_4%),0_18px_48px_rgb(0_0_0_/_28%)]'
 
@@ -211,20 +227,22 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
 }
 
 function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
-  const [interval, setInterval] = useState('7d')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [draftFilters, setDraftFilters] = useState<DashboardFilters>(() => loadStoredDashboardFilters())
+  const [appliedFilters, setAppliedFilters] = useState<DashboardFilters>(() => loadStoredDashboardFilters())
   const [data, setData] = useState<LeadsSummaryResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
-  async function fetchSummary() {
+  async function fetchSummary(nextFilters = appliedFilters) {
     setLoading(true)
 
     try {
-      const response = await api.leads(buildFilters())
+      const normalizedFilters = normalizeDashboardFilters(nextFilters)
+      const response = await api.leads(buildFilters(normalizedFilters))
       setData(response)
+      setAppliedFilters(normalizedFilters)
+      saveDashboardFilters(normalizedFilters)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onLogout()
@@ -240,7 +258,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     setExporting(true)
 
     try {
-      await downloadLeadsExport(buildFilters())
+      await downloadLeadsExport(buildFilters(appliedFilters))
       toast.success('Download iniciado!')
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -253,14 +271,18 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   }
 
-  function buildFilters(): LeadFilters {
+  function buildFilters(filters: DashboardFilters): LeadFilters {
     return {
-      ...(interval === 'custom' ? { from, to } : { period: interval }),
+      ...(filters.interval === 'custom'
+        ? filters.from || filters.to
+          ? { from: filters.from, to: filters.to }
+          : { period: 'all' }
+        : { period: filters.interval }),
     }
   }
 
   useEffect(() => {
-    void fetchSummary()
+    void fetchSummary(appliedFilters)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -308,14 +330,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <select
                 id="interval"
                 className={`${fieldClass} text-sm appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%20stroke%3D%22%239aa4b2%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.75rem_center] bg-[length:1.25rem_1.25rem] bg-no-repeat pr-10`}
-                value={interval}
+                value={draftFilters.interval}
                 onChange={(event) => {
-                  const nextInterval = event.target.value
-                  setInterval(nextInterval)
-                  if (nextInterval !== 'custom') {
-                    setFrom('')
-                    setTo('')
-                  }
+                  const nextInterval = event.target.value as DashboardInterval
+                  setDraftFilters((current) =>
+                    normalizeDashboardFilters({
+                      ...current,
+                      interval: nextInterval,
+                      ...(nextInterval !== 'custom' ? { from: '', to: '' } : {}),
+                    }),
+                  )
                 }}
               >
                 {periods.map((item) => (
@@ -326,26 +350,37 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </select>
             </div>
 
-            {interval === 'custom' && (
+            {draftFilters.interval === 'custom' && (
               <>
                 <div className="min-w-[140px] flex-1">
                   <label className={fieldLabelClass} htmlFor="from">
                     De
                   </label>
-                  <input id="from" className={`${fieldClass} text-sm`} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                  <input
+                    id="from"
+                    className={`${fieldClass} text-sm`}
+                    type="date"
+                    value={draftFilters.from}
+                    onChange={(event) => setDraftFilters((current) => ({ ...current, from: event.target.value }))}
+                  />
                 </div>
                 <div className="min-w-[140px] flex-1">
                   <label className={fieldLabelClass} htmlFor="to">
                     Até
                   </label>
-                  <input id="to" className={`${fieldClass} text-sm`} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                  <input
+                    id="to"
+                    className={`${fieldClass} text-sm`}
+                    type="date"
+                    value={draftFilters.to}
+                    onChange={(event) => setDraftFilters((current) => ({ ...current, to: event.target.value }))}
+                  />
                 </div>
                 <button
                   className={`${buttonMutedClass} px-3 text-sm shrink-0`}
                   type="button"
                   onClick={() => {
-                    setFrom('')
-                    setTo('')
+                    setDraftFilters((current) => ({ ...current, from: '', to: '' }))
                   }}
                   title="Limpar datas"
                 >
@@ -354,7 +389,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </>
             )}
 
-            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchSummary()} disabled={loading}>
+            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchSummary(draftFilters)} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               Buscar
             </button>
@@ -414,7 +449,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
             <div className="rounded-[8px] border border-border bg-[#10141b] p-6 flex flex-col justify-center">
               <p className="text-xs font-bold uppercase tracking-widest text-muted">Filtro de Data Ativo</p>
-              <p className="mt-3 text-lg font-bold text-text">{describeActiveRange(interval, from, to)}</p>
+              <p className="mt-3 text-lg font-bold text-text">{describeActiveRange(appliedFilters.interval, appliedFilters.from, appliedFilters.to)}</p>
             </div>
           </div>
         </section>
@@ -480,6 +515,46 @@ function formatInteger(value: number) {
   return new Intl.NumberFormat('pt-BR').format(value)
 }
 
+function normalizeDashboardFilters(value: Partial<DashboardFilters> | null | undefined): DashboardFilters {
+  const interval =
+    value?.interval && periodValues.has(value.interval)
+      ? value.interval
+      : defaultDashboardFilters.interval
+
+  const filters: DashboardFilters = {
+    interval,
+    from: typeof value?.from === 'string' ? value.from : '',
+    to: typeof value?.to === 'string' ? value.to : '',
+  }
+
+  if (filters.interval !== 'custom') {
+    filters.from = ''
+    filters.to = ''
+  }
+
+  return filters
+}
+
+function loadStoredDashboardFilters(): DashboardFilters {
+  try {
+    const raw = localStorage.getItem(dashboardFiltersStorageKey)
+    if (!raw) {
+      return { ...defaultDashboardFilters }
+    }
+    return normalizeDashboardFilters(JSON.parse(raw) as Partial<DashboardFilters>)
+  } catch {
+    return { ...defaultDashboardFilters }
+  }
+}
+
+function saveDashboardFilters(filters: DashboardFilters) {
+  try {
+    localStorage.setItem(dashboardFiltersStorageKey, JSON.stringify(filters))
+  } catch {
+    // Mantem o dashboard funcional mesmo sem persistencia local.
+  }
+}
+
 function formatDateTime(value: string) {
   if (!value) {
     return '-'
@@ -501,6 +576,9 @@ function formatDateTime(value: string) {
 
 function describeActiveRange(interval: string, from: string, to: string) {
   if (interval === 'custom') {
+    if (!from && !to) {
+      return 'Todo o histórico'
+    }
     if (from && to) {
       return `${from} até ${to}`
     }

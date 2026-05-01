@@ -280,6 +280,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [])
 
   const leads = data?.items ?? []
+  const hasLeads = (data?.total ?? 0) > 0
 
   return (
     <div className="min-h-screen text-base">
@@ -291,13 +292,13 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
             <div>
               <h1 className="text-xl font-bold text-text">Painel UY3</h1>
-              <p className="hidden text-sm text-muted sm:block">Leads recebidos via webhook</p>
+              <p className="hidden text-sm text-muted sm:block">Gestão de Leads</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             <span className="hidden text-sm font-medium text-muted md:inline">{user.email}</span>
-            <button className={`${buttonMutedClass} text-sm font-medium`} type="button" onClick={() => setLogoutDialogOpen(true)}>
+            <button className={`${buttonMutedClass} h-8 px-3 text-sm font-medium`} type="button" onClick={() => setLogoutDialogOpen(true)}>
               <LogOut className="size-4" />
               Sair
             </button>
@@ -306,103 +307,111 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
-        <section className={`${panelClass} mb-6 rounded-[8px]`}>
-          <div className="flex items-center justify-between border-b border-border bg-surface-soft/30 px-5 py-4">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-text">
-              <Filter className="size-5 text-muted" />
-              Filtros e Exportação
-            </h2>
-            <div className="flex items-center gap-2 text-sm font-medium text-muted">
-              <span>Total filtrado:</span>
-              <span className="rounded-md bg-border/50 px-2 py-0.5 text-text">
-                {formatInteger(data?.total ?? 0)}
-              </span>
-            </div>
-          </div>
+        
+        {/* ÁREA DE BUSCA */}
+        <section className={`${panelClass} mb-8 rounded-[8px] p-5`}>
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-muted uppercase tracking-widest">
+            <Filter className="size-4" />
+            Filtros de Busca
+          </h2>
           
-          <div className="p-5">
-            <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-end">
-              <div className="min-w-[200px] flex-1">
-                <label className={`${fieldLabelClass} mb-1 text-sm font-medium`} htmlFor="interval">
-                  Intervalo
-                </label>
-                <select
-                  id="interval"
-                  className={`${fieldClass} text-sm`}
-                  value={interval}
-                  onChange={(event) => {
-                    const nextInterval = event.target.value
-                    setInterval(nextInterval)
-                    if (nextInterval !== 'custom') {
-                      setFrom('')
-                      setTo('')
-                    }
-                  }}
-                >
-                  {periods.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-[160px] flex-1">
+              <label className={fieldLabelClass} htmlFor="interval">
+                Intervalo
+              </label>
+              <select
+                id="interval"
+                className={`${fieldClass} text-sm`}
+                value={interval}
+                onChange={(event) => {
+                  const nextInterval = event.target.value
+                  setInterval(nextInterval)
+                  if (nextInterval !== 'custom') {
+                    setFrom('')
+                    setTo('')
+                  }
+                }}
+              >
+                {periods.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              <div className="min-w-[200px] flex-1">
-                <label className={`${fieldLabelClass} mb-1 text-sm font-medium`} htmlFor="order">
-                  Ordenação
-                </label>
-                <select id="order" className={`${fieldClass} text-sm`} value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
-                  <option value="desc">Mais recente</option>
-                  <option value="asc">Mais antigo</option>
-                </select>
-              </div>
-
-              {interval === 'custom' && (
-                <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-1 sm:flex-row sm:items-end md:min-w-[340px]">
-                  <div className="flex-1">
-                    <label className={`${fieldLabelClass} mb-1 text-sm font-medium`} htmlFor="from">
-                      De
-                    </label>
-                    <input id="from" className={`${fieldClass} text-sm`} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-                  </div>
-
-                  <div className="flex-1">
-                    <label className={`${fieldLabelClass} mb-1 text-sm font-medium`} htmlFor="to">
-                      Até
-                    </label>
-                    <input id="to" className={`${fieldClass} text-sm`} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-                  </div>
-
-                  <button
-                    className={`${buttonMutedClass} mt-2 text-sm sm:mt-0`}
-                    type="button"
-                    onClick={() => {
-                      setFrom('')
-                      setTo('')
-                    }}
-                    title="Limpar datas"
-                  >
-                    <RefreshCcw className="size-4" />
-                    <span className="sm:hidden">Limpar datas</span>
-                  </button>
+            {interval === 'custom' && (
+              <>
+                <div className="min-w-[140px] flex-1">
+                  <label className={fieldLabelClass} htmlFor="from">
+                    De
+                  </label>
+                  <input id="from" className={`${fieldClass} text-sm`} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
                 </div>
-              )}
+                <div className="min-w-[140px] flex-1">
+                  <label className={fieldLabelClass} htmlFor="to">
+                    Até
+                  </label>
+                  <input id="to" className={`${fieldClass} text-sm`} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                </div>
+                <button
+                  className={`${buttonMutedClass} px-3 text-sm shrink-0`}
+                  type="button"
+                  onClick={() => {
+                    setFrom('')
+                    setTo('')
+                  }}
+                  title="Limpar datas"
+                >
+                  <RefreshCcw className="size-4" />
+                </button>
+              </>
+            )}
+
+            <div className="min-w-[160px] flex-1">
+              <label className={fieldLabelClass} htmlFor="order">
+                Ordenação
+              </label>
+              <select id="order" className={`${fieldClass} text-sm`} value={direction} onChange={(event) => setDirection(event.target.value as 'asc' | 'desc')}>
+                <option value="desc">Mais recente</option>
+                <option value="asc">Mais antigo</option>
+              </select>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse items-center justify-end gap-3 border-t border-border pt-5 sm:flex-row">
-              <button className={`${buttonMutedClass} w-full text-sm font-medium sm:w-auto`} type="button" onClick={() => void handleExport()} disabled={exporting}>
-                {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                Exportar CSV
-              </button>
-              
-              <button className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`} type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
-                {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-                Buscar Leads
-              </button>
-            </div>
+            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchLeads(1)} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+              Buscar
+            </button>
           </div>
         </section>
 
+        {/* ÁREA DE AÇÃO E RESULTADOS */}
+        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-soft border border-border text-accent">
+              <Database className="size-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-text leading-none">
+                {loading ? '-' : formatInteger(data?.total ?? 0)}
+              </p>
+              <p className="text-xs font-medium text-muted uppercase tracking-wider mt-1">Leads Encontrados</p>
+            </div>
+          </div>
+
+          <button 
+            className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`} 
+            type="button" 
+            onClick={() => void handleExport()} 
+            disabled={exporting || !hasLeads || loading}
+          >
+            {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            Baixar CSV
+          </button>
+        </div>
+
+        {/* TABELA */}
         <section className={`${panelClass} overflow-hidden rounded-[8px]`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-[0.9rem]">
@@ -529,7 +538,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
 function LeadRow({ lead }: { lead: Lead }) {
   return (
-    <tr className="hover:bg-[rgb(255_255_255_/_2.5%)]">
+    <tr className="hover:bg-[rgb(255_255_255_/_2.5%)] transition-colors">
       <td className="border-t border-border py-[0.85rem] px-4 align-middle font-mono text-xs text-muted">#{lead.id}</td>
       <td className="border-t border-border whitespace-nowrap px-4 py-[0.85rem] align-middle">{formatDateTime(lead.received_at)}</td>
       <td className="border-t border-border px-4 py-[0.85rem] align-middle font-mono text-sm">{formatCPF(lead.cpf)}</td>

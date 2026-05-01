@@ -584,7 +584,7 @@ function formatDateTime(value: string) {
     return '-'
   }
 
-  const date = new Date(value.replace(' ', 'T'))
+  const date = new Date(value.replace(' ', 'T') + 'Z')
   if (Number.isNaN(date.getTime())) {
     return value
   }

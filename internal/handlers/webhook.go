@@ -20,7 +20,7 @@ func NewWebhookHandler(db *sql.DB) *WebhookHandler {
 }
 
 func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 10<<20))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 512<<10))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "payload muito grande ou invalido")
 		return

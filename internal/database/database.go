@@ -11,6 +11,12 @@ import (
 	"github.com/tursodatabase/libsql-client-go/libsql"
 )
 
+// Operational note: pure date filters on leads list/export benefit from a
+// dedicated index on received_at.
+// Recommended migration:
+// CREATE INDEX IF NOT EXISTS idx_leads_received_at ON leads(received_at);
+// The composite index (exportado, received_at) is less efficient when the
+// query predicate only constrains received_at.
 func Open(databaseURL string) (*sql.DB, error) {
 	if strings.TrimSpace(databaseURL) == "" {
 		return nil, fmt.Errorf("DATABASE_URL nao configurado")

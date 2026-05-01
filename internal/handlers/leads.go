@@ -111,9 +111,11 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	csvWriter.Comma = ';'
 	defer csvWriter.Flush()
 
-	if err := csvWriter.Write(csvHeaders()); err != nil {
+	headers := csvHeaders()
+	if err := csvWriter.Write(headers); err != nil {
 		return
 	}
+	record := make([]string, len(headers))
 
 	flusher, canFlush := w.(http.Flusher)
 	const batchSize = 1000
@@ -141,9 +143,9 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			SELECT
 				id, cpf, nome_trabalhador, status, elegivel_emprestimo,
 				valor_liberado, margem_disponivel, numero_parcelas,
-				data_hora_validade_solicitacao, data_nascimento, data_admissao,
-				is_mei, is_judicial_recovery, pep_codigo, active_fgts_debts,
-				type_webhook, raw_payload, exportado, received_at
+				received_at, data_hora_validade_solicitacao, data_nascimento,
+				data_admissao, is_mei, is_judicial_recovery, pep_codigo,
+				active_fgts_debts
 			FROM leads
 			%s
 			ORDER BY id %s
@@ -158,32 +160,16 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 		batchCount := 0
 		for rows.Next() {
-			lead, err := scanLeadRaw(rows)
+			lead, err := scanLeadForCSV(rows)
 			if err != nil {
 				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				rows.Close()
+				_ = rows.Close()
 				return
 			}
-			if err := csvWriter.Write([]string{
-				lead.CPF,
-				lead.NomeTrabalhador,
-				lead.Status,
-				booleanLabel(lead.ElegivelEmprestimo),
-				formatDecimalBR(lead.ValorLiberado),
-				formatDecimalBR(lead.MargemDisponivel),
-				strconv.FormatInt(lead.NumeroParcelas, 10),
-				formatDateBR(lead.ReceivedAt, true),
-				formatDateBR(lead.DataHoraValidadeSolicitacao, true),
-				formatDateBR(lead.DataNascimento, false),
-				formatDateBR(lead.DataAdmissao, false),
-				strconv.FormatInt(lead.ID, 10),
-				booleanLabel(lead.IsMEI),
-				booleanLabel(lead.IsJudicialRecovery),
-				booleanLabel(lead.PEPCodigo),
-				booleanLabel(lead.ActiveFGTSDebts),
-			}); err != nil {
+			fillCSVRecord(record, lead)
+			if err := csvWriter.Write(record); err != nil {
 				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				rows.Close()
+				_ = rows.Close()
 				return
 			}
 			lastSeenID = lead.ID
@@ -193,11 +179,13 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 		if err := rows.Err(); err != nil {
 			log.Printf("Erro na exportação CSV após streaming: %v", err)
-			rows.Close()
+			_ = rows.Close()
 			return
 		}
-
-		rows.Close()
+		if err := rows.Close(); err != nil {
+			log.Printf("Erro ao encerrar lote da exportação CSV: %v", err)
+			return
+		}
 		csvWriter.Flush()
 		if err := csvWriter.Error(); err != nil {
 			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lastSeenID, err)
@@ -244,6 +232,55 @@ func scanLead(scanner leadScanner) (models.Lead, error) {
 
 func scanLeadRaw(scanner leadScanner) (models.Lead, error) {
 	return scanLeadWithOptions(scanner, false)
+}
+
+func scanLeadForCSV(scanner leadScanner) (models.Lead, error) {
+	var lead models.Lead
+	var cpf, nome, status, elegivel, receivedAt sql.NullString
+	var validade, nascimento, admissao sql.NullString
+	var isMEI, judicial, pep, fgts sql.NullString
+	var valor, margem sql.NullFloat64
+	var parcelas sql.NullInt64
+
+	err := scanner.Scan(
+		&lead.ID,
+		&cpf,
+		&nome,
+		&status,
+		&elegivel,
+		&valor,
+		&margem,
+		&parcelas,
+		&receivedAt,
+		&validade,
+		&nascimento,
+		&admissao,
+		&isMEI,
+		&judicial,
+		&pep,
+		&fgts,
+	)
+	if err != nil {
+		return models.Lead{}, err
+	}
+
+	lead.CPF = nullString(cpf)
+	lead.NomeTrabalhador = nullString(nome)
+	lead.Status = nullString(status)
+	lead.ElegivelEmprestimo = nullString(elegivel)
+	lead.ValorLiberado = nullFloat(valor)
+	lead.MargemDisponivel = nullFloat(margem)
+	lead.NumeroParcelas = nullInt(parcelas)
+	lead.ReceivedAt = nullString(receivedAt)
+	lead.DataHoraValidadeSolicitacao = nullString(validade)
+	lead.DataNascimento = nullString(nascimento)
+	lead.DataAdmissao = nullString(admissao)
+	lead.IsMEI = nullString(isMEI)
+	lead.IsJudicialRecovery = nullString(judicial)
+	lead.PEPCodigo = nullString(pep)
+	lead.ActiveFGTSDebts = nullString(fgts)
+
+	return lead, nil
 }
 
 func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.Lead, error) {
@@ -301,6 +338,25 @@ func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.
 	}
 
 	return lead, nil
+}
+
+func fillCSVRecord(record []string, lead models.Lead) {
+	record[0] = lead.CPF
+	record[1] = lead.NomeTrabalhador
+	record[2] = lead.Status
+	record[3] = booleanLabel(lead.ElegivelEmprestimo)
+	record[4] = formatDecimalBR(lead.ValorLiberado)
+	record[5] = formatDecimalBR(lead.MargemDisponivel)
+	record[6] = strconv.FormatInt(lead.NumeroParcelas, 10)
+	record[7] = formatDateBR(lead.ReceivedAt, true)
+	record[8] = formatDateBR(lead.DataHoraValidadeSolicitacao, true)
+	record[9] = formatDateBR(lead.DataNascimento, false)
+	record[10] = formatDateBR(lead.DataAdmissao, false)
+	record[11] = strconv.FormatInt(lead.ID, 10)
+	record[12] = booleanLabel(lead.IsMEI)
+	record[13] = booleanLabel(lead.IsJudicialRecovery)
+	record[14] = booleanLabel(lead.PEPCodigo)
+	record[15] = booleanLabel(lead.ActiveFGTSDebts)
 }
 
 func buildLeadWhere(filters models.LeadFilters) (string, []any) {

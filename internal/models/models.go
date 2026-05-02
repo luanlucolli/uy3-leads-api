@@ -38,7 +38,6 @@ type Lead struct {
 	PEPCodigo                   string  `json:"pep_codigo"`
 	ActiveFGTSDebts             string  `json:"active_fgts_debts"`
 	TypeWebhook                 string  `json:"type_webhook"`
-	RawPayload                  string  `json:"raw_payload,omitempty"`
 	Exportado                   int64   `json:"exportado"`
 	ReceivedAt                  string  `json:"received_at"`
 }

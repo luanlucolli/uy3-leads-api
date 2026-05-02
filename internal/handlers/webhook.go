@@ -60,7 +60,6 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		PEPCodigo:                   textField(payload, "pep_codigo", "pepCodigo", "pepCode"),
 		ActiveFGTSDebts:             textField(payload, "active_fgts_debts", "activeFgtsDebts", "activeFGTSDebts"),
 		TypeWebhook:                 textField(payload, "typeWebook", "typeWebhook", "type_webhook"),
-		RawPayload:                  string(raw),
 	}
 
 	tx, err := h.db.BeginTx(r.Context(), nil)
@@ -76,14 +75,14 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 			valor_liberado, margem_disponivel, numero_parcelas,
 			data_hora_validade_solicitacao, data_nascimento, data_admissao,
 			is_mei, is_judicial_recovery, pep_codigo, active_fgts_debts,
-			type_webhook, raw_payload
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			type_webhook
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lead.CPF, lead.NomeTrabalhador, lead.Status, lead.ElegivelEmprestimo,
 		lead.ValorLiberado, lead.MargemDisponivel, lead.NumeroParcelas,
 		lead.DataHoraValidadeSolicitacao, lead.DataNascimento, lead.DataAdmissao,
 		lead.IsMEI, lead.IsJudicialRecovery, lead.PEPCodigo, lead.ActiveFGTSDebts,
-		lead.TypeWebhook, lead.RawPayload,
+		lead.TypeWebhook,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
@@ -126,7 +125,6 @@ type webhookLead struct {
 	PEPCodigo                   string
 	ActiveFGTSDebts             string
 	TypeWebhook                 string
-	RawPayload                  string
 }
 
 func textField(payload map[string]any, keys ...string) string {

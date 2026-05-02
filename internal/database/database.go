@@ -46,8 +46,8 @@ func Open(databaseURL string) (*sql.DB, error) {
 
 	db := sql.OpenDB(connector)
 	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(25)
-	db.SetConnMaxIdleTime(5 * time.Minute)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxIdleTime(1 * time.Minute)
 	db.SetConnMaxLifetime(30 * time.Minute)
 
 	return db, nil

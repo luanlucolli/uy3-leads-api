@@ -86,86 +86,56 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	record := make([]string, len(headers))
 
 	flusher, canFlush := w.(http.Flusher)
-	const batchSize = 1000
-	lastSeenID := int64(0)
-	hasCursor := false
+	query := fmt.Sprintf(`
+		SELECT
+			id, cpf, nome_trabalhador, status, elegivel_emprestimo,
+			valor_liberado, margem_disponivel, numero_parcelas,
+			received_at, data_hora_validade_solicitacao, data_nascimento,
+			data_admissao, is_mei, is_judicial_recovery, pep_codigo,
+			active_fgts_debts
+		FROM leads
+		%s
+		ORDER BY received_at DESC, id DESC
+	`, where)
 
-	for {
-		batchWhere := where
-		batchArgs := append([]any{}, args...)
+	rows, err := h.db.QueryContext(r.Context(), query, args...)
+	if err != nil {
+		log.Printf("Erro na exportação CSV ao buscar leads: %v", err)
+		return
+	}
 
-		if hasCursor {
-			keysetClause := "id > ?"
-			if filters.Direction == "desc" {
-				keysetClause = "id < ?"
-			}
-			if batchWhere == "" {
-				batchWhere = " WHERE " + keysetClause
-			} else {
-				batchWhere += " AND " + keysetClause
-			}
-			batchArgs = append(batchArgs, lastSeenID)
-		}
-
-		query := fmt.Sprintf(`
-			SELECT
-				id, cpf, nome_trabalhador, status, elegivel_emprestimo,
-				valor_liberado, margem_disponivel, numero_parcelas,
-				received_at, data_hora_validade_solicitacao, data_nascimento,
-				data_admissao, is_mei, is_judicial_recovery, pep_codigo,
-				active_fgts_debts
-			FROM leads
-			%s
-			ORDER BY id %s
-			LIMIT %d
-		`, batchWhere, filters.Direction, batchSize)
-
-		rows, err := h.db.QueryContext(r.Context(), query, batchArgs...)
+	for rows.Next() {
+		lead, err := scanLeadForCSV(rows)
 		if err != nil {
-			log.Printf("Erro na exportação CSV ao buscar lote: %v", err)
-			return
-		}
-
-		batchCount := 0
-		for rows.Next() {
-			lead, err := scanLeadForCSV(rows)
-			if err != nil {
-				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				_ = rows.Close()
-				return
-			}
-			fillCSVRecord(record, lead)
-			if err := csvWriter.Write(record); err != nil {
-				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				_ = rows.Close()
-				return
-			}
-			lastSeenID = lead.ID
-			hasCursor = true
-			batchCount++
-		}
-
-		if err := rows.Err(); err != nil {
-			log.Printf("Erro na exportação CSV após streaming: %v", err)
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 			_ = rows.Close()
 			return
 		}
-		if err := rows.Close(); err != nil {
-			log.Printf("Erro ao encerrar lote da exportação CSV: %v", err)
+		fillCSVRecord(record, lead)
+		if err := csvWriter.Write(record); err != nil {
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
+			_ = rows.Close()
 			return
 		}
-		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lastSeenID, err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
+	}
 
-		if batchCount < batchSize {
-			break
-		}
+	if err := rows.Err(); err != nil {
+		log.Printf("Erro na exportação CSV após streaming: %v", err)
+		_ = rows.Close()
+		return
+	}
+	if err := rows.Close(); err != nil {
+		log.Printf("Erro ao encerrar exportação CSV: %v", err)
+		return
+	}
+
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		log.Printf("Erro na exportação CSV: %v", err)
+		return
+	}
+	if canFlush {
+		flusher.Flush()
 	}
 }
 
@@ -254,7 +224,7 @@ func scanLeadForCSV(scanner leadScanner) (models.Lead, error) {
 func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.Lead, error) {
 	var lead models.Lead
 	var cpf, nome, status, elegivel, validade, nascimento, admissao sql.NullString
-	var isMEI, judicial, pep, fgts, typeWebhook, rawPayload, receivedAt sql.NullString
+	var isMEI, judicial, pep, fgts, typeWebhook, receivedAt sql.NullString
 	var valor, margem sql.NullFloat64
 	var parcelas, exportado sql.NullInt64
 
@@ -275,7 +245,6 @@ func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.
 		&pep,
 		&fgts,
 		&typeWebhook,
-		&rawPayload,
 		&exportado,
 		&receivedAt,
 	)
@@ -298,7 +267,6 @@ func scanLeadWithOptions(scanner leadScanner, normalizeReceivedAt bool) (models.
 	lead.PEPCodigo = nullString(pep)
 	lead.ActiveFGTSDebts = nullString(fgts)
 	lead.TypeWebhook = nullString(typeWebhook)
-	lead.RawPayload = nullString(rawPayload)
 	lead.Exportado = nullInt(exportado)
 	lead.ReceivedAt = nullString(receivedAt)
 	if normalizeReceivedAt {

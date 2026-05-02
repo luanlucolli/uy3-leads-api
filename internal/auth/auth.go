@@ -31,7 +31,7 @@ func NewService(db *sql.DB, jwtSecret string) (*Service, error) {
 	return &Service{db: db, jwtSecret: []byte(jwtSecret)}, nil
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (string, error) {
+func (s *Service) Login(ctx context.Context, email, password string) (string, models.User, error) {
 	var user models.User
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, email, password_hash
@@ -39,14 +39,14 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, er
 		WHERE email = ?
 	`, email).Scan(&user.ID, &user.Email, &user.PasswordHash)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("credenciais invalidas")
+		return "", models.User{}, fmt.Errorf("credenciais invalidas")
 	}
 	if err != nil {
-		return "", err
+		return "", models.User{}, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return "", fmt.Errorf("credenciais invalidas")
+		return "", models.User{}, fmt.Errorf("credenciais invalidas")
 	}
 
 	now := time.Now()
@@ -61,7 +61,12 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, er
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	signedToken, err := token.SignedString(s.jwtSecret)
+	if err != nil {
+		return "", models.User{}, err
+	}
+
+	return signedToken, user, nil
 }
 
 func (s *Service) ParseToken(rawToken string) (*Claims, error) {

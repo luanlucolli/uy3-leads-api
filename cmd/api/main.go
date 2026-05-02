@@ -39,12 +39,6 @@ func main() {
 	}
 	defer db.Close()
 
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancelPing()
-	if err := db.PingContext(pingCtx); err != nil {
-		log.Printf("warning: database ping on startup failed: %v", err)
-	}
-
 	authService, err := auth.NewService(db, cfg.JWTSecret)
 	if err != nil {
 		log.Fatalf("auth: %v", err)
@@ -90,7 +84,7 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Compress(3, "text/html", "text/css", "application/javascript", "application/json"))
+	r.Use(chimiddleware.Compress(3, "text/html", "text/css", "application/javascript"))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

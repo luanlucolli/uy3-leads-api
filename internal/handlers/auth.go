@@ -63,7 +63,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.authService.Login(r.Context(), req.Email, req.Password)
+	token, user, err := h.authService.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if err.Error() == "credenciais invalidas" {
 			writeError(w, http.StatusUnauthorized, "credenciais inválidas")
@@ -75,7 +75,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.loginLimiter.reset(ip)
-	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user": map[string]any{
+			"id":    user.ID,
+			"email": user.Email,
+		},
+	})
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {

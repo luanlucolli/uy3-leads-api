@@ -54,6 +54,10 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar resumo de leads")
 		return
 	}
+	if response.Total == 0 {
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
 
 	var lastLeadAt sql.NullString
 	lastLeadQuery, lastLeadArgs := buildLastLeadQueryAt(filters, now)
@@ -363,12 +367,12 @@ func buildLeadWhere(filters models.LeadFilters) (string, []any) {
 }
 
 func buildLeadWhereAt(filters models.LeadFilters, now time.Time) (string, []any) {
-	fromUTC, toUTC, hasRange := leadDateTimeRange(filters, now)
+	fromUTC, endExclusiveUTC, hasRange := leadDateTimeRange(filters, now)
 	if !hasRange {
 		return "", nil
 	}
 
-	return " WHERE received_at >= ? AND received_at <= ?", []any{fromUTC, toUTC}
+	return " WHERE received_at >= ? AND received_at < ?", []any{fromUTC, endExclusiveUTC}
 }
 
 func buildSummaryWhere(filters models.LeadFilters) (string, []any) {
@@ -401,21 +405,23 @@ func buildLastLeadQueryAt(filters models.LeadFilters, now time.Time) (string, []
 }
 
 func summaryDateRange(filters models.LeadFilters, now time.Time) (string, string) {
-	start, end, hasRange := resolveBRTDayRange(filters, now)
+	startDay, endDay, hasRange := resolveBRTDayRange(filters, now)
 	if !hasRange {
 		return "", ""
 	}
 
-	return start.Format("2006-01-02"), end.Format("2006-01-02")
+	return startDay.Format("2006-01-02"), endDay.Format("2006-01-02")
 }
 
 func leadDateTimeRange(filters models.LeadFilters, now time.Time) (string, string, bool) {
-	start, end, hasRange := resolveBRTDayRange(filters, now)
+	startDay, endDay, hasRange := resolveBRTDayRange(filters, now)
 	if !hasRange {
 		return "", "", false
 	}
 
-	return start.UTC().Format("2006-01-02 15:04:05"), end.UTC().Format("2006-01-02 15:04:05"), true
+	start := startOfDayInLocation(startDay, brtLocation)
+	endExclusive := startOfDayInLocation(endDay, brtLocation).AddDate(0, 0, 1)
+	return start.UTC().Format("2006-01-02 15:04:05"), endExclusive.UTC().Format("2006-01-02 15:04:05"), true
 }
 
 func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, time.Time, bool) {
@@ -431,7 +437,7 @@ func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, t
 		if err != nil {
 			return time.Time{}, time.Time{}, false
 		}
-		return startOfDayInLocation(fromDate, loc), endOfDayInLocation(toDate, loc), true
+		return startOfDayInLocation(fromDate, loc), startOfDayInLocation(toDate, loc), true
 	}
 	if filters.From != "" || filters.To != "" {
 		return time.Time{}, time.Time{}, false
@@ -440,13 +446,13 @@ func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, t
 	today := startOfDayInLocation(now, loc)
 	switch filters.Period {
 	case "24h":
-		return today.AddDate(0, 0, -1), endOfDayInLocation(today, loc), true
+		return today.AddDate(0, 0, -1), today, true
 	case "7d":
-		return today.AddDate(0, 0, -7), endOfDayInLocation(today, loc), true
+		return today.AddDate(0, 0, -6), today, true
 	case "30d":
-		return today.AddDate(0, 0, -30), endOfDayInLocation(today, loc), true
+		return today.AddDate(0, 0, -29), today, true
 	case "90d":
-		return today.AddDate(0, 0, -90), endOfDayInLocation(today, loc), true
+		return today.AddDate(0, 0, -89), today, true
 	default:
 		return time.Time{}, time.Time{}, false
 	}
@@ -454,10 +460,6 @@ func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, t
 
 func startOfDayInLocation(value time.Time, loc *time.Location) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, loc)
-}
-
-func endOfDayInLocation(value time.Time, loc *time.Location) time.Time {
-	return time.Date(value.Year(), value.Month(), value.Day(), 23, 59, 59, 0, loc)
 }
 
 func nullString(value sql.NullString) string {

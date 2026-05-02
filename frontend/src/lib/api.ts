@@ -3,6 +3,11 @@ export interface User {
   email: string
 }
 
+export interface LoginResponse {
+  token: string
+  user: User
+}
+
 export interface LeadsSummaryResponse {
   total: number
   last_lead_at?: string
@@ -85,7 +90,7 @@ function buildQuery(params: LeadFilters) {
 
 export const api = {
   login(email: string, password: string) {
-    return request<{ token: string }>('/login', {
+    return request<LoginResponse>('/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })

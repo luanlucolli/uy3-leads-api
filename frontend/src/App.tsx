@@ -160,10 +160,9 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
     setLoading(true)
 
     try {
-      const { token } = await api.login(email.trim(), password)
+      const { token, user } = await api.login(email.trim(), password)
       setToken(token)
-      const currentUser = await api.me()
-      onLoggedIn(currentUser)
+      onLoggedIn(user)
     } catch (err) {
       clearToken()
       toast.error(err instanceof ApiError && err.status === 401 ? 'Credenciais inválidas' : errorMessage(err, 'Não foi possível entrar'))

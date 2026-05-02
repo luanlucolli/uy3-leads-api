@@ -50,8 +50,18 @@ func TestSummaryDateRangeForFixedPeriods(t *testing.T) {
 	}
 
 	from7d, to7d := summaryDateRange(models.LeadFilters{Period: "7d"}, now)
-	if from7d != "2026-05-03" || to7d != "2026-05-10" {
+	if from7d != "2026-05-04" || to7d != "2026-05-10" {
 		t.Fatalf("summaryDateRange(7d) = %q, %q", from7d, to7d)
+	}
+
+	from30d, to30d := summaryDateRange(models.LeadFilters{Period: "30d"}, now)
+	if from30d != "2026-04-11" || to30d != "2026-05-10" {
+		t.Fatalf("summaryDateRange(30d) = %q, %q", from30d, to30d)
+	}
+
+	from90d, to90d := summaryDateRange(models.LeadFilters{Period: "90d"}, now)
+	if from90d != "2026-02-10" || to90d != "2026-05-10" {
+		t.Fatalf("summaryDateRange(90d) = %q, %q", from90d, to90d)
 	}
 }
 
@@ -63,7 +73,7 @@ func TestBuildLeadWhereWithFromTo(t *testing.T) {
 
 	where, args := buildLeadWhere(filters)
 
-	if where != " WHERE received_at >= ? AND received_at <= ?" {
+	if where != " WHERE received_at >= ? AND received_at < ?" {
 		t.Fatalf("buildLeadWhere where = %q", where)
 	}
 	if len(args) != 2 {
@@ -72,8 +82,8 @@ func TestBuildLeadWhereWithFromTo(t *testing.T) {
 	if args[0] != "2026-04-01 03:00:00" {
 		t.Fatalf("buildLeadWhere from arg = %v", args[0])
 	}
-	if args[1] != "2026-05-01 02:59:59" {
-		t.Fatalf("buildLeadWhere to arg = %v", args[1])
+	if args[1] != "2026-05-01 03:00:00" {
+		t.Fatalf("buildLeadWhere endExclusive arg = %v", args[1])
 	}
 }
 
@@ -82,7 +92,7 @@ func TestBuildLeadWhereAtUsesYesterdayAndTodayFor24h(t *testing.T) {
 
 	where, args := buildLeadWhereAt(models.LeadFilters{Period: "24h"}, now)
 
-	if where != " WHERE received_at >= ? AND received_at <= ?" {
+	if where != " WHERE received_at >= ? AND received_at < ?" {
 		t.Fatalf("buildLeadWhereAt(24h) where = %q", where)
 	}
 	if len(args) != 2 {
@@ -91,8 +101,25 @@ func TestBuildLeadWhereAtUsesYesterdayAndTodayFor24h(t *testing.T) {
 	if args[0] != "2026-05-09 03:00:00" {
 		t.Fatalf("buildLeadWhereAt(24h) from arg = %v", args[0])
 	}
-	if args[1] != "2026-05-11 02:59:59" {
-		t.Fatalf("buildLeadWhereAt(24h) to arg = %v", args[1])
+	if args[1] != "2026-05-11 03:00:00" {
+		t.Fatalf("buildLeadWhereAt(24h) endExclusive arg = %v", args[1])
+	}
+}
+
+func TestLeadDateTimeRangeUsesExclusiveEndForCustomRange(t *testing.T) {
+	startUTC, endExclusiveUTC, ok := leadDateTimeRange(models.LeadFilters{
+		From: "2026-04-01",
+		To:   "2026-04-30",
+	}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if !ok {
+		t.Fatal("leadDateTimeRange(custom) expected range")
+	}
+	if startUTC != "2026-04-01 03:00:00" {
+		t.Fatalf("leadDateTimeRange(custom) startUTC = %q", startUTC)
+	}
+	if endExclusiveUTC != "2026-05-01 03:00:00" {
+		t.Fatalf("leadDateTimeRange(custom) endExclusiveUTC = %q", endExclusiveUTC)
 	}
 }
 
@@ -143,7 +170,7 @@ func TestBuildLastLeadQueryAtUsesFilterRange(t *testing.T) {
 
 	query, args := buildLastLeadQueryAt(models.LeadFilters{Period: "7d"}, now)
 
-	if !strings.Contains(query, "WHERE received_at >= ? AND received_at <= ?") {
+	if !strings.Contains(query, "WHERE received_at >= ? AND received_at < ?") {
 		t.Fatalf("buildLastLeadQueryAt query = %q", query)
 	}
 	if !strings.Contains(query, "ORDER BY received_at DESC, id DESC LIMIT 1") {
@@ -152,7 +179,7 @@ func TestBuildLastLeadQueryAtUsesFilterRange(t *testing.T) {
 	if len(args) != 2 {
 		t.Fatalf("buildLastLeadQueryAt args length = %d", len(args))
 	}
-	if args[0] != "2026-05-03 03:00:00" || args[1] != "2026-05-11 02:59:59" {
+	if args[0] != "2026-05-04 03:00:00" || args[1] != "2026-05-11 03:00:00" {
 		t.Fatalf("buildLastLeadQueryAt args = %#v", args)
 	}
 }

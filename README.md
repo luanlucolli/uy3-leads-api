@@ -101,8 +101,6 @@ Headers aceitos:
 - `Secret-Key`
 - `Authorization: Bearer <secret>`
 
-O payload bruto recebido tambem e salvo no banco em `raw_payload`.
-
 ## Listagem de leads
 
 O endpoint `GET /leads` suporta:
@@ -143,4 +141,3 @@ Se o banco nao responder ao `Ping`, o processo encerra e a API nao abre a porta.
 ## Observacoes
 
 - esta API foi pensada para uso interno
-

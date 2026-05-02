@@ -28,6 +28,36 @@ func TestFormatDateBRConvertsUTCToBRTOnce(t *testing.T) {
 	}
 }
 
+func TestFormatDateBRKeepsDateOnlyWithoutTimezoneShift(t *testing.T) {
+	raw := "1990-05-20"
+
+	got := formatDateBR(raw, false)
+
+	if got != "20/05/1990" {
+		t.Fatalf("formatDateBR(%q, false) = %q", raw, got)
+	}
+}
+
+func TestFormatDateBRKeepsRFC3339DateWithoutTimezoneShiftWhenTimeHidden(t *testing.T) {
+	raw := "1990-05-20T00:00:00Z"
+
+	got := formatDateBR(raw, false)
+
+	if got != "20/05/1990" {
+		t.Fatalf("formatDateBR(%q, false) = %q", raw, got)
+	}
+}
+
+func TestFormatDateForAPIDateOnlyDoesNotShiftTimezone(t *testing.T) {
+	raw := "2026-05-01"
+
+	got := formatDateForAPI(raw)
+
+	if got != "2026-05-01" {
+		t.Fatalf("formatDateForAPI(%q) = %q", raw, got)
+	}
+}
+
 func TestSummaryDateRangeForCustomDates(t *testing.T) {
 	filters := models.LeadFilters{
 		From: "2026-04-01",

@@ -534,9 +534,8 @@ func formatDateBR(raw string, includeTime bool) string {
 		if err != nil {
 			continue
 		}
-		parsed = parsed.In(brtLocation)
 		if includeTime && hasTime(layout, raw) {
-			return parsed.Format("02/01/2006 15:04:05")
+			return parsed.In(brtLocation).Format("02/01/2006 15:04:05")
 		}
 		return parsed.Format("02/01/2006")
 	}
@@ -570,9 +569,8 @@ func formatDateForAPI(raw string) string {
 		if err != nil {
 			continue
 		}
-		parsed = parsed.In(brtLocation)
 		if hasTime(layout, raw) {
-			return parsed.Format("2006-01-02 15:04:05")
+			return parsed.In(brtLocation).Format("2006-01-02 15:04:05")
 		}
 		return parsed.Format("2006-01-02")
 	}

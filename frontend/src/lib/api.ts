@@ -19,9 +19,14 @@ export interface LeadFilters {
   to?: string
 }
 
+type PerformRequestOptions = RequestInit & {
+  timeoutMs?: number
+}
+
 const TOKEN_KEY = 'uy3_token'
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
-const requestTimeoutMs = 35_000
+const defaultRequestTimeoutMs = 35_000
+const exportRequestTimeoutMs = 10 * 60 * 1000
 const transientRetryDelaysMs = [1_500]
 const transientStatuses = new Set([502, 503, 504])
 
@@ -56,7 +61,7 @@ export function isTransientApiError(error: unknown) {
   return error instanceof ApiError && error.transient
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: PerformRequestOptions = {}): Promise<T> {
   const response = await performRequest(path, options)
   const text = await response.text()
   if (!text) {
@@ -70,12 +75,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
-async function performRequest(path: string, options: RequestInit = {}) {
-  const requestOptions = withAuthHeaders(options)
+async function performRequest(path: string, options: PerformRequestOptions = {}) {
+  const { timeoutMs = defaultRequestTimeoutMs, ...requestInit } = options
+  const requestOptions = withAuthHeaders(requestInit)
 
   for (let attempt = 0; attempt <= transientRetryDelaysMs.length; attempt += 1) {
     try {
-      const response = await fetchWithTimeout(`${apiBase}${path}`, requestOptions)
+      const response = await fetchWithTimeout(`${apiBase}${path}`, requestOptions, timeoutMs)
       if (!response.ok) {
         const apiError = await buildApiError(response)
         if (shouldRetry(apiError, attempt)) {
@@ -116,9 +122,9 @@ function withAuthHeaders(options: RequestInit) {
   }
 }
 
-async function fetchWithTimeout(input: string, options: RequestInit) {
+async function fetchWithTimeout(input: string, options: RequestInit, timeoutMs: number) {
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), requestTimeoutMs)
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   let detachAbort: (() => void) | undefined
 
   if (options.signal) {
@@ -240,7 +246,9 @@ export const api = {
 }
 
 export async function downloadLeadsExport(filters: LeadFilters) {
-  const response = await performRequest(`/leads/export${buildQuery(filters)}`)
+  const response = await performRequest(`/leads/export${buildQuery(filters)}`, {
+    timeoutMs: exportRequestTimeoutMs,
+  })
   const blob = await response.blob()
   const filename = exportFilename(response.headers.get('Content-Disposition'))
   const url = URL.createObjectURL(blob)

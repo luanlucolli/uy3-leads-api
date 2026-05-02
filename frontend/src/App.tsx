@@ -423,7 +423,8 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   const total = data?.total ?? 0
   const hasLeads = total > 0
-  const canExport = hasLeads
+  const exportValidationError = filterValidationMessage(appliedFilters, 'export')
+  const canExport = hasLeads && exportValidationError === null
 
   return (
     <div className="min-h-screen text-base">
@@ -710,6 +711,9 @@ function filterValidationMessage(filters: DashboardFilters, mode: 'summary' | 'e
     if (filters.to < filters.from) {
       return 'A data final deve ser maior ou igual à data inicial.'
     }
+    if (mode === 'export' && exceedsExportRangeLimit(filters.from, filters.to)) {
+      return 'O intervalo máximo para exportação CSV é de 180 dias.'
+    }
     return null
   }
 
@@ -722,6 +726,16 @@ function filterValidationMessage(filters: DashboardFilters, mode: 'summary' | 'e
 
 function areDashboardFiltersEqual(left: DashboardFilters, right: DashboardFilters) {
   return left.interval === right.interval && left.from === right.from && left.to === right.to
+}
+
+function exceedsExportRangeLimit(from: string, to: string) {
+  const fromDate = new Date(`${from}T00:00:00Z`)
+  const toDate = new Date(`${to}T00:00:00Z`)
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return false
+  }
+
+  return toDate.getTime()-fromDate.getTime() > 180 * 24 * 60 * 60 * 1000
 }
 
 function formatDateTime(value: string) {

@@ -35,17 +35,14 @@ func main() {
 
 	db, err := database.Open(cfg.DatabaseURL)
 	if err != nil {
-		log.Printf("warning: database unavailable on startup: %v", err)
-	} else {
-		defer db.Close()
+		log.Fatalf("database: %v", err)
 	}
+	defer db.Close()
 
-	if db != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if err := db.PingContext(ctx); err != nil {
-			log.Printf("warning: database ping failed on startup: %v", err)
-		}
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelPing()
+	if err := db.PingContext(pingCtx); err != nil {
+		log.Fatalf("database ping: %v", err)
 	}
 
 	authService, err := auth.NewService(db, cfg.JWTSecret)
@@ -93,19 +90,16 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Compress(5, "text/html", "text/css", "application/javascript", "application/json", "text/csv"))
+	r.Use(chimiddleware.Compress(3, "text/html", "text/css", "application/javascript", "application/json"))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if db == nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"status":    "error",
-				"component": "database",
-			})
-			return
-		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
 
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
@@ -150,6 +144,7 @@ func spaHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestPath := strings.TrimPrefix(r.URL.Path, "/")
 		if requestPath == "" {
+			w.Header().Set("Cache-Control", "no-cache")
 			fileServer.ServeHTTP(w, r)
 			return
 		}
@@ -159,6 +154,11 @@ func spaHandler() http.HandlerFunc {
 			defer file.Close()
 			stat, statErr := file.Stat()
 			if statErr == nil && !stat.IsDir() {
+				if strings.HasPrefix(requestPath, "assets/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else if requestPath == "index.html" {
+					w.Header().Set("Cache-Control", "no-cache")
+				}
 				fileServer.ServeHTTP(w, r)
 				return
 			}
@@ -170,6 +170,7 @@ func spaHandler() http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(index)

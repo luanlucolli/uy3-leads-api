@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,10 +40,10 @@ func Open(databaseURL string) (*sql.DB, error) {
 	}
 
 	db := sql.OpenDB(connector)
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(2)
-	db.SetConnMaxIdleTime(1 * time.Minute)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetMaxOpenConns(envInt("DB_MAX_OPEN_CONNS", 3))
+	db.SetMaxIdleConns(envInt("DB_MAX_IDLE_CONNS", 1))
+	db.SetConnMaxIdleTime(time.Duration(envInt("DB_CONN_MAX_IDLE_SECONDS", 30)) * time.Second)
+	db.SetConnMaxLifetime(time.Duration(envInt("DB_CONN_MAX_LIFETIME_SECONDS", 600)) * time.Second)
 
 	return db, nil
 }
@@ -70,4 +71,16 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return fallback
+	}
+	return value
 }

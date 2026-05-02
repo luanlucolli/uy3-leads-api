@@ -8,7 +8,7 @@ Esta aplicacao centraliza o fluxo de:
 
 - recebimento de leads via webhook
 - autenticacao de usuarios internos
-- listagem paginada de leads para a SPA
+- resumo agregado de leads para a SPA
 - exportacao de leads em CSV
 
 ## Stack
@@ -101,22 +101,18 @@ Headers aceitos:
 - `Secret-Key`
 - `Authorization: Bearer <secret>`
 
-## Listagem de leads
+## Resumo de leads
 
-O endpoint `GET /leads` suporta:
+O endpoint `GET /leads` retorna métricas agregadas para o painel e suporta:
 
-- `page`
-- `per_page`
 - `period` com `all`, `24h`, `7d`, `30d`, `90d`
 - `from` e `to` no formato `YYYY-MM-DD`
-- `sort` com `received_at` ou `id`
-- `direction` com `asc` ou `desc`
 
 Se `from` e `to` forem enviados, eles sobrescrevem `period`.
 
 ## Exportacao CSV
 
-O endpoint `GET /leads/export` usa os mesmos filtros do `GET /leads`.
+O endpoint `GET /leads/export` usa apenas filtros de data ou periodo. A exportacao sem filtro util, como `period=all`, e bloqueada para evitar consumo acidental do banco.
 
 Regras atuais:
 

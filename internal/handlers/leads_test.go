@@ -53,3 +53,44 @@ func TestSummaryDateRangeForRollingPeriods(t *testing.T) {
 		t.Fatalf("summaryDateRange(7d) = %q, %q", from7d, to7d)
 	}
 }
+
+func TestBuildLeadWhereWithFromTo(t *testing.T) {
+	filters := models.LeadFilters{
+		From: "2026-04-01",
+		To:   "2026-04-30",
+	}
+
+	where, args := buildLeadWhere(filters)
+
+	if where != " WHERE received_at >= ? AND received_at <= ?" {
+		t.Fatalf("buildLeadWhere where = %q", where)
+	}
+	if len(args) != 2 {
+		t.Fatalf("buildLeadWhere args length = %d", len(args))
+	}
+	if args[0] != "2026-04-01 03:00:00" {
+		t.Fatalf("buildLeadWhere from arg = %v", args[0])
+	}
+	if args[1] != "2026-05-01 02:59:59" {
+		t.Fatalf("buildLeadWhere to arg = %v", args[1])
+	}
+}
+
+func TestValidateExportFiltersBlocksAllWithoutDate(t *testing.T) {
+	err := validateExportFilters(models.LeadFilters{Period: "all"})
+
+	if err == nil {
+		t.Fatal("validateExportFilters(all) expected error")
+	}
+}
+
+func TestValidateExportFiltersLimitsCustomWindow(t *testing.T) {
+	err := validateExportFilters(models.LeadFilters{
+		From: "2026-01-01",
+		To:   "2026-07-01",
+	})
+
+	if err == nil {
+		t.Fatal("validateExportFilters(large custom window) expected error")
+	}
+}

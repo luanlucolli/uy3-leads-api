@@ -255,6 +255,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   async function handleExport() {
+    if (!isExportFilterValid(appliedFilters)) {
+      toast.error('Selecione um período ou intervalo de datas para exportar o CSV')
+      return
+    }
+
     setExporting(true)
 
     try {
@@ -288,6 +293,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   const total = data?.total ?? 0
   const hasLeads = total > 0
+  const canExport = hasLeads && isExportFilterValid(appliedFilters)
 
   return (
     <div className="min-h-screen text-base">
@@ -410,7 +416,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               className={`${buttonPrimaryClass} w-full text-sm font-medium sm:w-auto`}
               type="button"
               onClick={() => void handleExport()}
-              disabled={exporting || !hasLeads || loading}
+              disabled={exporting || !canExport || loading}
             >
               {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               Baixar CSV
@@ -553,6 +559,13 @@ function saveDashboardFilters(filters: DashboardFilters) {
   } catch {
     // Mantem o dashboard funcional mesmo sem persistencia local.
   }
+}
+
+function isExportFilterValid(filters: DashboardFilters) {
+  if (filters.interval === 'custom') {
+    return Boolean(filters.from && filters.to)
+  }
+  return filters.interval !== 'all'
 }
 
 function formatDateTime(value: string) {

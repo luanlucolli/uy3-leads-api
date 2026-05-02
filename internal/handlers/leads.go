@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,11 @@ import (
 )
 
 var brtLocation = time.FixedZone("BRT", -3*3600)
+
+const (
+	defaultExportBatchSize = 1000
+	maxExportWindowDays    = 180
+)
 
 type LeadsHandler struct {
 	db *sql.DB
@@ -66,6 +72,10 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	where, args := buildLeadWhere(filters)
+	if err := validateExportFilters(filters); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	filename := "leads_" + time.Now().Format("20060102_150405") + ".csv"
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -86,7 +96,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	record := make([]string, len(headers))
 
 	flusher, canFlush := w.(http.Flusher)
-	const batchSize = 1000
+	batchSize := exportBatchSize()
 	var lastDate string
 	var lastID int64
 	hasCursor := false
@@ -170,6 +180,49 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+func validateExportFilters(filters models.LeadFilters) error {
+	if filters.From == "" && filters.To == "" {
+		switch filters.Period {
+		case "24h", "7d", "30d", "90d":
+			return nil
+		default:
+			return fmt.Errorf("informe um periodo ou intervalo de datas para exportar CSV")
+		}
+	}
+	if filters.From == "" || filters.To == "" {
+		return fmt.Errorf("informe data inicial e final para exportar CSV")
+	}
+
+	from, err := time.Parse("2006-01-02", filters.From)
+	if err != nil {
+		return fmt.Errorf("from deve estar no formato YYYY-MM-DD")
+	}
+	to, err := time.Parse("2006-01-02", filters.To)
+	if err != nil {
+		return fmt.Errorf("to deve estar no formato YYYY-MM-DD")
+	}
+	if to.Before(from) {
+		return fmt.Errorf("to deve ser maior ou igual a from")
+	}
+	if to.Sub(from) > maxExportWindowDays*24*time.Hour {
+		return fmt.Errorf("intervalo maximo para exportacao CSV e de %d dias", maxExportWindowDays)
+	}
+
+	return nil
+}
+
+func exportBatchSize() int {
+	raw := strings.TrimSpace(os.Getenv("EXPORT_CSV_BATCH_SIZE"))
+	if raw == "" {
+		return defaultExportBatchSize
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return defaultExportBatchSize
+	}
+	return value
 }
 
 func csvHeaders() []string {

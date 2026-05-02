@@ -3,7 +3,6 @@ package models
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -48,48 +47,24 @@ type SummaryResponse struct {
 }
 
 type LeadFilters struct {
-	Page      int
-	PerPage   int
-	Period    string
-	From      string
-	To        string
-	Sort      string
-	Direction string
+	Period string
+	From   string
+	To     string
 }
 
 func ParseLeadFilters(r *http.Request) (LeadFilters, error) {
 	q := r.URL.Query()
 	f := LeadFilters{
-		Page:      parsePositiveInt(q.Get("page"), 1),
-		PerPage:   parsePositiveInt(q.Get("per_page"), 20),
-		Period:    strings.ToLower(strings.TrimSpace(q.Get("period"))),
-		From:      strings.TrimSpace(q.Get("from")),
-		To:        strings.TrimSpace(q.Get("to")),
-		Sort:      strings.ToLower(strings.TrimSpace(q.Get("sort"))),
-		Direction: strings.ToLower(strings.TrimSpace(q.Get("direction"))),
-	}
-
-	if f.PerPage > 100 {
-		f.PerPage = 100
+		Period: strings.ToLower(strings.TrimSpace(q.Get("period"))),
+		From:   strings.TrimSpace(q.Get("from")),
+		To:     strings.TrimSpace(q.Get("to")),
 	}
 	if f.Period == "" {
 		f.Period = "all"
 	}
-	if f.Sort == "" {
-		f.Sort = "received_at"
-	}
-	if f.Direction == "" {
-		f.Direction = "desc"
-	}
 
 	if !validPeriod(f.Period) {
 		return LeadFilters{}, fmt.Errorf("period invalido")
-	}
-	if f.Sort != "received_at" && f.Sort != "id" {
-		return LeadFilters{}, fmt.Errorf("sort invalido")
-	}
-	if f.Direction != "asc" && f.Direction != "desc" {
-		return LeadFilters{}, fmt.Errorf("direction invalida")
 	}
 	if f.From != "" {
 		if _, err := time.Parse("2006-01-02", f.From); err != nil {
@@ -105,24 +80,9 @@ func ParseLeadFilters(r *http.Request) (LeadFilters, error) {
 	return f, nil
 }
 
-func (f LeadFilters) Offset() int {
-	return (f.Page - 1) * f.PerPage
-}
-
-func parsePositiveInt(raw string, fallback int) int {
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < 1 {
-		return fallback
-	}
-	return value
-}
-
 func validPeriod(period string) bool {
 	switch period {
-	case "all", "24h", "7d", "30d", "90d":
+	case "all", "24h", "7d", "30d", "90d", "custom":
 		return true
 	default:
 		return false

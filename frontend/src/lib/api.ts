@@ -9,13 +9,9 @@ export interface LeadsSummaryResponse {
 }
 
 export interface LeadFilters {
-  page?: number
-  per_page?: number
   period?: string
   from?: string
   to?: string
-  sort?: 'received_at' | 'id'
-  direction?: 'asc' | 'desc'
 }
 
 const TOKEN_KEY = 'uy3_token'

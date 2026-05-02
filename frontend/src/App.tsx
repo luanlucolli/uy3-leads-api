@@ -47,6 +47,7 @@ const defaultDashboardFilters: DashboardFilters = {
   from: '',
   to: '',
 }
+const wakeHintDelayMs = 4_000
 
 const panelClass =
   'border border-border bg-[rgb(21_25_34_/_88%)] shadow-[inset_0_1px_0_rgb(255_255_255_/_4%),0_18px_48px_rgb(0_0_0_/_28%)]'
@@ -126,7 +127,7 @@ function App() {
 
     const timeoutId = window.setTimeout(() => {
       setShowWakeHint(true)
-    }, 4000)
+    }, wakeHintDelayMs)
 
     return () => {
       window.clearTimeout(timeoutId)
@@ -202,7 +203,7 @@ function LoadingScreen({ showWakeHint }: { showWakeHint: boolean }) {
         </div>
         {showWakeHint ? (
           <p className="mt-3 text-sm leading-6 text-muted">
-            Acordando o serviço. Isso pode levar até 1 minuto no plano gratuito.
+            Acordando o serviço. Isso pode levar até 1 minuto e meio no plano gratuito.
           </p>
         ) : null}
       </div>
@@ -231,7 +232,7 @@ function SessionRecoveryScreen({
             <h1 className="mt-1 text-2xl font-bold text-text">Não foi possível confirmar sua sessão agora</h1>
             <p className="mt-3 text-sm leading-6 text-muted">{message}</p>
             <p className="mt-3 text-sm leading-6 text-muted">
-              O serviço pode estar acordando no Render Free. Tente novamente em alguns instantes ou saia para limpar o token manualmente.
+              O serviço pode estar acordando no Render Free. Isso pode levar até 1 minuto e meio. Tente novamente em alguns instantes ou saia para limpar o token manualmente.
             </p>
           </div>
         </div>
@@ -255,9 +256,25 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showWakeHint, setShowWakeHint] = useState(false)
+
+  useEffect(() => {
+    if (!loading) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowWakeHint(true)
+    }, wakeHintDelayMs)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [loading])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setShowWakeHint(false)
     setLoading(true)
 
     try {
@@ -268,11 +285,12 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
       if (isUnauthorizedApiError(err)) {
         toast.error('Credenciais inválidas')
       } else if (isTransientApiError(err)) {
-        toast.error('Serviço indisponível no momento. Ele pode estar acordando no plano gratuito.')
+        toast.error('Serviço indisponível no momento. Ele pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.')
       } else {
         toast.error(errorMessage(err, 'Não foi possível entrar'))
       }
     } finally {
+      setShowWakeHint(false)
       setLoading(false)
     }
   }
@@ -323,8 +341,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
 
           <button className={`${buttonPrimaryClass} w-full text-base font-medium`} type="submit" disabled={loading}>
             {loading ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
-            Entrar
+            {loading ? 'Entrando...' : 'Entrar'}
           </button>
+          {showWakeHint ? (
+            <p className="text-sm leading-6 text-muted">
+              Acordando o serviço. Isso pode levar até 1 minuto e meio no plano gratuito.
+            </p>
+          ) : null}
         </form>
       </section>
     </main>
@@ -790,7 +813,7 @@ function describeActiveRange(interval: string, from: string, to: string) {
 
 function sessionRecoveryMessage(error: unknown) {
   if (isTransientApiError(error)) {
-    return 'A conexão não foi concluída agora. O serviço pode estar acordando no plano gratuito.'
+    return 'A conexão não foi concluída agora. O serviço pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.'
   }
 
   return errorMessage(error, 'Não foi possível restaurar a sessão no momento.')

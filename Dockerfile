@@ -1,7 +1,7 @@
-FROM node:22-alpine AS frontend-builder
+FROM node:22-alpine3.21 AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm i
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
@@ -12,9 +12,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+RUN test -f ./frontend/dist/index.html
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o /bin/api ./cmd/api
 
-FROM alpine:latest
+FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=go-builder /bin/api /bin/api
 EXPOSE 8080

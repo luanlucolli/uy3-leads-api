@@ -25,9 +25,9 @@ type PerformRequestOptions = RequestInit & {
 
 const TOKEN_KEY = 'uy3_token'
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
-const defaultRequestTimeoutMs = 35_000
+const defaultRequestTimeoutMs = 110_000
 const exportRequestTimeoutMs = 10 * 60 * 1000
-const transientRetryDelaysMs = [1_500]
+const transientRetryDelaysMs = [2_500]
 const transientStatuses = new Set([502, 503, 504])
 
 export function getToken() {
@@ -63,15 +63,20 @@ export function isTransientApiError(error: unknown) {
 
 async function request<T>(path: string, options: PerformRequestOptions = {}): Promise<T> {
   const response = await performRequest(path, options)
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (!isJSONContentType(contentType)) {
+    throw new ApiError(response.status, unexpectedJSONResponseMessage(), true)
+  }
+
   const text = await response.text()
-  if (!text) {
-    return {} as T
+  if (!text.trim()) {
+    throw new ApiError(response.status, invalidJSONResponseMessage(), true)
   }
 
   try {
     return JSON.parse(text) as T
   } catch {
-    return text as T
+    throw new ApiError(response.status, invalidJSONResponseMessage(), true)
   }
 }
 
@@ -202,7 +207,20 @@ function friendlyMessageForStatus(status: number) {
 }
 
 function transientServiceMessage() {
-  return 'Serviço indisponível no momento. Ele pode estar acordando no plano gratuito.'
+  return 'Serviço indisponível no momento. Ele pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.'
+}
+
+function unexpectedJSONResponseMessage() {
+  return 'O serviço respondeu com um formato inesperado. Ele pode estar acordando no plano gratuito.'
+}
+
+function invalidJSONResponseMessage() {
+  return 'O serviço respondeu com um JSON inválido. Tente novamente em instantes.'
+}
+
+function isJSONContentType(contentType: string) {
+  const normalized = contentType.toLowerCase()
+  return normalized.includes('application/json') || normalized.includes('+json')
 }
 
 function delay(ms: number | undefined) {

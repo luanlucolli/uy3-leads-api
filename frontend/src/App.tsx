@@ -48,12 +48,18 @@ const defaultDashboardFilters: DashboardFilters = {
   to: '',
 }
 const wakeHintDelayMs = 4_000
+const companyName = (import.meta.env.VITE_COMPANY_NAME ?? '').trim()
+const headerSubtitle = companyName || 'Gestão de Leads'
+const headerLogoSrc = '/uy3-logo.png'
 
 const panelClass =
   'border border-border bg-[rgb(21_25_34_/_88%)] shadow-[inset_0_1px_0_rgb(255_255_255_/_4%),0_18px_48px_rgb(0_0_0_/_28%)]'
 
 const brandMarkClass =
   'inline-grid h-[2.4rem] w-[2.4rem] shrink-0 place-items-center rounded-[8px] text-[#1a1008] bg-[linear-gradient(135deg,var(--accent),var(--accent-2))] shadow-[0_12px_30px_rgb(243_111_33_/_28%)]'
+
+const brandLogoClass =
+  'h-full w-full rounded-[8px] object-contain bg-[rgb(255_255_255_/_0.98)] p-1.5'
 
 const fieldLabelClass =
   'mb-[0.45rem] block text-[0.72rem] font-bold uppercase tracking-[0.04em] text-muted'
@@ -72,6 +78,23 @@ const buttonMutedClass =
 
 const buttonDangerClass =
   `${buttonBaseClass} border-[rgb(239_68_68_/_38%)] bg-[linear-gradient(180deg,rgb(239_68_68_/_18%),rgb(239_68_68_/_12%))] text-[#fff4f4] hover:border-[rgb(239_68_68_/_55%)] hover:bg-[linear-gradient(180deg,rgb(239_68_68_/_26%),rgb(239_68_68_/_18%))]`
+
+function HeaderBrandLogo() {
+  const [imageAvailable, setImageAvailable] = useState(true)
+
+  if (imageAvailable) {
+    return (
+      <img
+        src={headerLogoSrc}
+        alt="Logo UY3"
+        className={brandLogoClass}
+        onError={() => setImageAvailable(false)}
+      />
+    )
+  }
+
+  return <span className="text-[0.72rem] font-black tracking-[0.16em] text-[#1a1008]">UY3</span>
+}
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -455,11 +478,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className={brandMarkClass}>
-              <Database className="size-6" />
+              <HeaderBrandLogo />
             </div>
             <div>
               <h1 className="text-xl font-bold text-text">Painel UY3</h1>
-              <p className="hidden text-sm text-muted sm:block">Gestão de Leads</p>
+              <p className="hidden text-sm text-muted sm:block">{headerSubtitle}</p>
             </div>
           </div>
 

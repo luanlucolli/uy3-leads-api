@@ -18,7 +18,9 @@ import (
 var brtLocation = time.FixedZone("BRT", -3*3600)
 
 const (
-	defaultExportBatchSize = 1000
+	defaultExportBatchSize = 500
+	minExportBatchSize     = 100
+	maxExportBatchSize     = 1000
 	maxExportWindowDays    = 180
 )
 
@@ -36,8 +38,13 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateSummaryFilters(filters); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	where, args := buildSummaryWhere(filters)
+	now := time.Now().In(brtLocation)
+	where, args := buildSummaryWhereAt(filters, now)
 	response := models.SummaryResponse{}
 	if err := h.db.QueryRowContext(
 		r.Context(),
@@ -49,10 +56,8 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var lastLeadAt sql.NullString
-	err = h.db.QueryRowContext(
-		r.Context(),
-		"SELECT received_at FROM leads ORDER BY received_at DESC LIMIT 1",
-	).Scan(&lastLeadAt)
+	lastLeadQuery, lastLeadArgs := buildLastLeadQueryAt(filters, now)
+	err = h.db.QueryRowContext(r.Context(), lastLeadQuery, lastLeadArgs...).Scan(&lastLeadAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar ultimo lead")
 		return
@@ -71,11 +76,12 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	where, args := buildLeadWhere(filters)
 	if err := validateExportFilters(filters); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	now := time.Now().In(brtLocation)
+	where, args := buildLeadWhereAt(filters, now)
 
 	filename := "leads_" + time.Now().Format("20060102_150405") + ".csv"
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -183,16 +189,44 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateExportFilters(filters models.LeadFilters) error {
+	return validateDateFilters(filters, dateFilterValidationOptions{
+		action:             "exportar CSV",
+		allowAll:           false,
+		maxCustomRangeDays: maxExportWindowDays,
+	})
+}
+
+func validateSummaryFilters(filters models.LeadFilters) error {
+	return validateDateFilters(filters, dateFilterValidationOptions{
+		action:   "consultar o resumo",
+		allowAll: true,
+	})
+}
+
+type dateFilterValidationOptions struct {
+	action             string
+	allowAll           bool
+	maxCustomRangeDays int
+}
+
+func validateDateFilters(filters models.LeadFilters, opts dateFilterValidationOptions) error {
 	if filters.From == "" && filters.To == "" {
 		switch filters.Period {
 		case "24h", "7d", "30d", "90d":
 			return nil
+		case "all":
+			if opts.allowAll {
+				return nil
+			}
+			return fmt.Errorf("informe um periodo ou intervalo de datas para %s", opts.action)
+		case "custom":
+			return fmt.Errorf("informe data inicial e final para %s", opts.action)
 		default:
-			return fmt.Errorf("informe um periodo ou intervalo de datas para exportar CSV")
+			return fmt.Errorf("periodo invalido")
 		}
 	}
 	if filters.From == "" || filters.To == "" {
-		return fmt.Errorf("informe data inicial e final para exportar CSV")
+		return fmt.Errorf("informe data inicial e final para %s", opts.action)
 	}
 
 	from, err := time.Parse("2006-01-02", filters.From)
@@ -206,8 +240,8 @@ func validateExportFilters(filters models.LeadFilters) error {
 	if to.Before(from) {
 		return fmt.Errorf("to deve ser maior ou igual a from")
 	}
-	if to.Sub(from) > maxExportWindowDays*24*time.Hour {
-		return fmt.Errorf("intervalo maximo para exportacao CSV e de %d dias", maxExportWindowDays)
+	if opts.maxCustomRangeDays > 0 && to.Sub(from) > time.Duration(opts.maxCustomRangeDays)*24*time.Hour {
+		return fmt.Errorf("intervalo maximo para exportacao CSV e de %d dias", opts.maxCustomRangeDays)
 	}
 
 	return nil
@@ -219,8 +253,14 @@ func exportBatchSize() int {
 		return defaultExportBatchSize
 	}
 	value, err := strconv.Atoi(raw)
-	if err != nil || value < 1 {
+	if err != nil {
 		return defaultExportBatchSize
+	}
+	if value < minExportBatchSize {
+		return minExportBatchSize
+	}
+	if value > maxExportBatchSize {
+		return maxExportBatchSize
 	}
 	return value
 }
@@ -319,54 +359,24 @@ func fillCSVRecord(record []string, lead models.Lead) {
 }
 
 func buildLeadWhere(filters models.LeadFilters) (string, []any) {
-	loc := brtLocation
-	clauses := make([]string, 0, 2)
-	args := make([]any, 0, 2)
+	return buildLeadWhereAt(filters, time.Now().In(brtLocation))
+}
 
-	if filters.From != "" || filters.To != "" {
-		if filters.From != "" {
-			fromTime, err := time.ParseInLocation("2006-01-02 15:04:05", filters.From+" 00:00:00", loc)
-			if err == nil {
-				clauses = append(clauses, "received_at >= ?")
-				args = append(args, fromTime.UTC().Format("2006-01-02 15:04:05"))
-			}
-		}
-		if filters.To != "" {
-			toTime, err := time.ParseInLocation("2006-01-02 15:04:05", filters.To+" 23:59:59", loc)
-			if err == nil {
-				clauses = append(clauses, "received_at <= ?")
-				args = append(args, toTime.UTC().Format("2006-01-02 15:04:05"))
-			}
-		}
-	} else {
-		now := time.Now().In(loc)
-		switch filters.Period {
-		case "24h":
-			clauses = append(clauses, "received_at >= ?")
-			args = append(args, now.Add(-24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
-		case "7d":
-			cutoff := startOfDayInLocation(now.AddDate(0, 0, -7), loc)
-			clauses = append(clauses, "received_at >= ?")
-			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
-		case "30d":
-			cutoff := startOfDayInLocation(now.AddDate(0, 0, -30), loc)
-			clauses = append(clauses, "received_at >= ?")
-			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
-		case "90d":
-			cutoff := startOfDayInLocation(now.AddDate(0, 0, -90), loc)
-			clauses = append(clauses, "received_at >= ?")
-			args = append(args, cutoff.UTC().Format("2006-01-02 15:04:05"))
-		}
+func buildLeadWhereAt(filters models.LeadFilters, now time.Time) (string, []any) {
+	fromUTC, toUTC, hasRange := leadDateTimeRange(filters, now)
+	if !hasRange {
+		return "", nil
 	}
 
-	if len(clauses) == 0 {
-		return "", args
-	}
-	return " WHERE " + strings.Join(clauses, " AND "), args
+	return " WHERE received_at >= ? AND received_at <= ?", []any{fromUTC, toUTC}
 }
 
 func buildSummaryWhere(filters models.LeadFilters) (string, []any) {
-	fromDate, toDate := summaryDateRange(filters, time.Now().In(brtLocation))
+	return buildSummaryWhereAt(filters, time.Now().In(brtLocation))
+}
+
+func buildSummaryWhereAt(filters models.LeadFilters, now time.Time) (string, []any) {
+	fromDate, toDate := summaryDateRange(filters, now)
 	clauses := make([]string, 0, 2)
 	args := make([]any, 0, 2)
 
@@ -385,30 +395,69 @@ func buildSummaryWhere(filters models.LeadFilters) (string, []any) {
 	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
+func buildLastLeadQueryAt(filters models.LeadFilters, now time.Time) (string, []any) {
+	where, args := buildLeadWhereAt(filters, now)
+	return "SELECT received_at FROM leads" + where + " ORDER BY received_at DESC, id DESC LIMIT 1", args
+}
+
 func summaryDateRange(filters models.LeadFilters, now time.Time) (string, string) {
-	if filters.From != "" || filters.To != "" {
-		return filters.From, filters.To
+	start, end, hasRange := resolveBRTDayRange(filters, now)
+	if !hasRange {
+		return "", ""
 	}
 
-	today := now.In(brtLocation).Format("2006-01-02")
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
+}
+
+func leadDateTimeRange(filters models.LeadFilters, now time.Time) (string, string, bool) {
+	start, end, hasRange := resolveBRTDayRange(filters, now)
+	if !hasRange {
+		return "", "", false
+	}
+
+	return start.UTC().Format("2006-01-02 15:04:05"), end.UTC().Format("2006-01-02 15:04:05"), true
+}
+
+func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, time.Time, bool) {
+	loc := brtLocation
+	now = now.In(loc)
+
+	if filters.From != "" && filters.To != "" {
+		fromDate, err := time.ParseInLocation("2006-01-02", filters.From, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, false
+		}
+		toDate, err := time.ParseInLocation("2006-01-02", filters.To, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, false
+		}
+		return startOfDayInLocation(fromDate, loc), endOfDayInLocation(toDate, loc), true
+	}
+	if filters.From != "" || filters.To != "" {
+		return time.Time{}, time.Time{}, false
+	}
+
+	today := startOfDayInLocation(now, loc)
 	switch filters.Period {
 	case "24h":
-		// leads_summary_daily stores BRT day buckets, so a 24h filter must include
-		// the daily buckets overlapped by the last 24 hours window.
-		return now.Add(-24 * time.Hour).In(brtLocation).Format("2006-01-02"), today
+		return today.AddDate(0, 0, -1), endOfDayInLocation(today, loc), true
 	case "7d":
-		return now.AddDate(0, 0, -7).In(brtLocation).Format("2006-01-02"), today
+		return today.AddDate(0, 0, -7), endOfDayInLocation(today, loc), true
 	case "30d":
-		return now.AddDate(0, 0, -30).In(brtLocation).Format("2006-01-02"), today
+		return today.AddDate(0, 0, -30), endOfDayInLocation(today, loc), true
 	case "90d":
-		return now.AddDate(0, 0, -90).In(brtLocation).Format("2006-01-02"), today
+		return today.AddDate(0, 0, -90), endOfDayInLocation(today, loc), true
 	default:
-		return "", ""
+		return time.Time{}, time.Time{}, false
 	}
 }
 
 func startOfDayInLocation(value time.Time, loc *time.Location) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, loc)
+}
+
+func endOfDayInLocation(value time.Time, loc *time.Location) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 23, 59, 59, 0, loc)
 }
 
 func nullString(value sql.NullString) string {

@@ -39,10 +39,10 @@ func main() {
 	}
 	defer db.Close()
 
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), 2*time.Second)
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelPing()
 	if err := db.PingContext(pingCtx); err != nil {
-		log.Fatalf("database ping: %v", err)
+		log.Printf("warning: database ping on startup failed: %v", err)
 	}
 
 	authService, err := auth.NewService(db, cfg.JWTSecret)

@@ -24,7 +24,7 @@ import {
 
 const periods = [
   { value: 'all', label: 'Todos' },
-  { value: '24h', label: '24h' },
+  { value: '24h', label: 'Ontem + hoje' },
   { value: '7d', label: '7 dias' },
   { value: '30d', label: '30 dias' },
   { value: '90d', label: '90 dias' },
@@ -254,6 +254,16 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   }
 
+  function handleSearch() {
+    const normalizedFilters = normalizeDashboardFilters(draftFilters)
+    if (!isSummaryFilterValid(normalizedFilters)) {
+      toast.error('Preencha as datas inicial e final para consultar um intervalo personalizado')
+      return
+    }
+
+    void fetchSummary(normalizedFilters)
+  }
+
   async function handleExport() {
     if (!isExportFilterValid(appliedFilters)) {
       toast.error('Selecione um período ou intervalo de datas para exportar o CSV')
@@ -277,13 +287,15 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   function buildFilters(filters: DashboardFilters): LeadFilters {
-    return {
-      ...(filters.interval === 'custom'
-        ? filters.from || filters.to
-          ? { from: filters.from, to: filters.to }
-          : { period: 'all' }
-        : { period: filters.interval }),
+    if (filters.interval === 'custom') {
+      return {
+        period: 'custom',
+        from: filters.from,
+        to: filters.to,
+      }
     }
+
+    return { period: filters.interval }
   }
 
   useEffect(() => {
@@ -395,7 +407,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               </>
             )}
 
-            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={() => void fetchSummary(draftFilters)} disabled={loading}>
+            <button className={`${buttonMutedClass} w-full sm:w-auto text-sm shrink-0`} type="button" onClick={handleSearch} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               Buscar
             </button>
@@ -547,7 +559,11 @@ function loadStoredDashboardFilters(): DashboardFilters {
     if (!raw) {
       return { ...defaultDashboardFilters }
     }
-    return normalizeDashboardFilters(JSON.parse(raw) as Partial<DashboardFilters>)
+    const stored = normalizeDashboardFilters(JSON.parse(raw) as Partial<DashboardFilters>)
+    if (stored.interval === 'custom' && !hasCompleteCustomRange(stored)) {
+      return { ...defaultDashboardFilters }
+    }
+    return stored
   } catch {
     return { ...defaultDashboardFilters }
   }
@@ -562,10 +578,21 @@ function saveDashboardFilters(filters: DashboardFilters) {
 }
 
 function isExportFilterValid(filters: DashboardFilters) {
-  if (filters.interval === 'custom') {
-    return Boolean(filters.from && filters.to)
+  if (!isSummaryFilterValid(filters)) {
+    return false
   }
   return filters.interval !== 'all'
+}
+
+function isSummaryFilterValid(filters: DashboardFilters) {
+  if (filters.interval === 'custom') {
+    return hasCompleteCustomRange(filters)
+  }
+  return true
+}
+
+function hasCompleteCustomRange(filters: DashboardFilters) {
+  return Boolean(filters.from && filters.to)
 }
 
 function formatDateTime(value: string) {
@@ -606,7 +633,7 @@ function describeActiveRange(interval: string, from: string, to: string) {
 
   switch (interval) {
     case '24h':
-      return 'Últimas 24 horas'
+      return 'Ontem + hoje'
     case '7d':
       return 'Últimos 7 dias'
     case '30d':

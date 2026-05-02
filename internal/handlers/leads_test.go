@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestSummaryDateRangeForCustomDates(t *testing.T) {
 	}
 }
 
-func TestSummaryDateRangeForRollingPeriods(t *testing.T) {
+func TestSummaryDateRangeForFixedPeriods(t *testing.T) {
 	now := time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation)
 
 	from24h, to24h := summaryDateRange(models.LeadFilters{Period: "24h"}, now)
@@ -76,11 +77,53 @@ func TestBuildLeadWhereWithFromTo(t *testing.T) {
 	}
 }
 
+func TestBuildLeadWhereAtUsesYesterdayAndTodayFor24h(t *testing.T) {
+	now := time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation)
+
+	where, args := buildLeadWhereAt(models.LeadFilters{Period: "24h"}, now)
+
+	if where != " WHERE received_at >= ? AND received_at <= ?" {
+		t.Fatalf("buildLeadWhereAt(24h) where = %q", where)
+	}
+	if len(args) != 2 {
+		t.Fatalf("buildLeadWhereAt(24h) args length = %d", len(args))
+	}
+	if args[0] != "2026-05-09 03:00:00" {
+		t.Fatalf("buildLeadWhereAt(24h) from arg = %v", args[0])
+	}
+	if args[1] != "2026-05-11 02:59:59" {
+		t.Fatalf("buildLeadWhereAt(24h) to arg = %v", args[1])
+	}
+}
+
 func TestValidateExportFiltersBlocksAllWithoutDate(t *testing.T) {
 	err := validateExportFilters(models.LeadFilters{Period: "all"})
 
 	if err == nil {
 		t.Fatal("validateExportFilters(all) expected error")
+	}
+}
+
+func TestValidateExportFiltersAcceptsFixedPeriods(t *testing.T) {
+	periods := []string{"24h", "7d", "30d", "90d"}
+
+	for _, period := range periods {
+		if err := validateExportFilters(models.LeadFilters{Period: period}); err != nil {
+			t.Fatalf("validateExportFilters(%q) unexpected error = %v", period, err)
+		}
+	}
+}
+
+func TestValidateExportFiltersRequireCompleteCustomRange(t *testing.T) {
+	tests := []models.LeadFilters{
+		{Period: "custom", From: "2026-01-01"},
+		{Period: "custom", To: "2026-01-31"},
+	}
+
+	for _, filters := range tests {
+		if err := validateExportFilters(filters); err == nil {
+			t.Fatalf("validateExportFilters(%+v) expected error", filters)
+		}
 	}
 }
 
@@ -93,4 +136,64 @@ func TestValidateExportFiltersLimitsCustomWindow(t *testing.T) {
 	if err == nil {
 		t.Fatal("validateExportFilters(large custom window) expected error")
 	}
+}
+
+func TestBuildLastLeadQueryAtUsesFilterRange(t *testing.T) {
+	now := time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation)
+
+	query, args := buildLastLeadQueryAt(models.LeadFilters{Period: "7d"}, now)
+
+	if !strings.Contains(query, "WHERE received_at >= ? AND received_at <= ?") {
+		t.Fatalf("buildLastLeadQueryAt query = %q", query)
+	}
+	if !strings.Contains(query, "ORDER BY received_at DESC, id DESC LIMIT 1") {
+		t.Fatalf("buildLastLeadQueryAt order = %q", query)
+	}
+	if len(args) != 2 {
+		t.Fatalf("buildLastLeadQueryAt args length = %d", len(args))
+	}
+	if args[0] != "2026-05-03 03:00:00" || args[1] != "2026-05-11 02:59:59" {
+		t.Fatalf("buildLastLeadQueryAt args = %#v", args)
+	}
+}
+
+func TestBuildLastLeadQueryAtForAllUsesGlobalLatest(t *testing.T) {
+	query, args := buildLastLeadQueryAt(models.LeadFilters{Period: "all"}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if query != "SELECT received_at FROM leads ORDER BY received_at DESC, id DESC LIMIT 1" {
+		t.Fatalf("buildLastLeadQueryAt(all) query = %q", query)
+	}
+	if len(args) != 0 {
+		t.Fatalf("buildLastLeadQueryAt(all) args = %#v", args)
+	}
+}
+
+func TestExportBatchSizeClamp(t *testing.T) {
+	t.Run("empty uses default", func(t *testing.T) {
+		t.Setenv("EXPORT_CSV_BATCH_SIZE", "")
+		if got := exportBatchSize(); got != 500 {
+			t.Fatalf("exportBatchSize() = %d", got)
+		}
+	})
+
+	t.Run("invalid uses default", func(t *testing.T) {
+		t.Setenv("EXPORT_CSV_BATCH_SIZE", "abc")
+		if got := exportBatchSize(); got != 500 {
+			t.Fatalf("exportBatchSize() = %d", got)
+		}
+	})
+
+	t.Run("below minimum clamps", func(t *testing.T) {
+		t.Setenv("EXPORT_CSV_BATCH_SIZE", "50")
+		if got := exportBatchSize(); got != 100 {
+			t.Fatalf("exportBatchSize() = %d", got)
+		}
+	})
+
+	t.Run("above maximum clamps", func(t *testing.T) {
+		t.Setenv("EXPORT_CSV_BATCH_SIZE", "1500")
+		if got := exportBatchSize(); got != 1000 {
+			t.Fatalf("exportBatchSize() = %d", got)
+		}
+	})
 }

@@ -154,6 +154,17 @@ func TestValidateExportFiltersRequireCompleteCustomRange(t *testing.T) {
 	}
 }
 
+func TestValidateExportFiltersRejectsToBeforeFrom(t *testing.T) {
+	err := validateExportFilters(models.LeadFilters{
+		From: "2026-02-01",
+		To:   "2026-01-31",
+	})
+
+	if err == nil {
+		t.Fatal("validateExportFilters(to before from) expected error")
+	}
+}
+
 func TestValidateExportFiltersLimitsCustomWindow(t *testing.T) {
 	err := validateExportFilters(models.LeadFilters{
 		From: "2026-01-01",
@@ -193,34 +204,4 @@ func TestBuildLastLeadQueryAtForAllUsesGlobalLatest(t *testing.T) {
 	if len(args) != 0 {
 		t.Fatalf("buildLastLeadQueryAt(all) args = %#v", args)
 	}
-}
-
-func TestExportBatchSizeClamp(t *testing.T) {
-	t.Run("empty uses default", func(t *testing.T) {
-		t.Setenv("EXPORT_CSV_BATCH_SIZE", "")
-		if got := exportBatchSize(); got != 500 {
-			t.Fatalf("exportBatchSize() = %d", got)
-		}
-	})
-
-	t.Run("invalid uses default", func(t *testing.T) {
-		t.Setenv("EXPORT_CSV_BATCH_SIZE", "abc")
-		if got := exportBatchSize(); got != 500 {
-			t.Fatalf("exportBatchSize() = %d", got)
-		}
-	})
-
-	t.Run("below minimum clamps", func(t *testing.T) {
-		t.Setenv("EXPORT_CSV_BATCH_SIZE", "50")
-		if got := exportBatchSize(); got != 100 {
-			t.Fatalf("exportBatchSize() = %d", got)
-		}
-	})
-
-	t.Run("above maximum clamps", func(t *testing.T) {
-		t.Setenv("EXPORT_CSV_BATCH_SIZE", "1500")
-		if got := exportBatchSize(); got != 1000 {
-			t.Fatalf("exportBatchSize() = %d", got)
-		}
-	})
 }

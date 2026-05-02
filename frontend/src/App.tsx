@@ -11,11 +11,12 @@ import {
 } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
 import {
-  ApiError,
   api,
   clearToken,
   downloadLeadsExport,
   getToken,
+  isTransientApiError,
+  isUnauthorizedApiError,
   setToken,
   type LeadFilters,
   type LeadsSummaryResponse,
@@ -73,27 +74,71 @@ const buttonDangerClass =
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
-  const [checkingSession, setCheckingSession] = useState(true)
+  const [checkingSession, setCheckingSession] = useState(() => Boolean(getToken()))
+  const [sessionRecoveryError, setSessionRecoveryError] = useState<string | null>(null)
+  const [sessionAttempt, setSessionAttempt] = useState(0)
+  const [showWakeHint, setShowWakeHint] = useState(false)
 
   useEffect(() => {
-    async function loadSession() {
-      if (!getToken()) {
-        setCheckingSession(false)
-        return
-      }
-
-      try {
-        const currentUser = await api.me()
-        setUser(currentUser)
-      } catch {
-        clearToken()
-      } finally {
-        setCheckingSession(false)
-      }
+    const token = getToken()
+    if (!token) {
+      return
     }
 
-    void loadSession()
-  }, [])
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const currentUser = await api.me()
+        if (cancelled) {
+          return
+        }
+        setUser(currentUser)
+      } catch (err) {
+        if (cancelled) {
+          return
+        }
+
+        if (isUnauthorizedApiError(err)) {
+          clearToken()
+          setUser(null)
+          setSessionRecoveryError(null)
+          return
+        }
+
+        setSessionRecoveryError(sessionRecoveryMessage(err))
+      } finally {
+        if (!cancelled) {
+          setCheckingSession(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionAttempt])
+
+  useEffect(() => {
+    if (!checkingSession) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowWakeHint(true)
+    }, 4000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [checkingSession])
+
+  function handleLogout() {
+    clearToken()
+    setUser(null)
+    setSessionRecoveryError(null)
+    setCheckingSession(false)
+  }
 
   return (
     <>
@@ -123,14 +168,22 @@ function App() {
       />
 
       {checkingSession ? (
-        <LoadingScreen />
+        <LoadingScreen showWakeHint={showWakeHint} />
       ) : user ? (
         <Dashboard
           user={user}
-          onLogout={() => {
-            clearToken()
-            setUser(null)
+          onLogout={handleLogout}
+        />
+      ) : getToken() && sessionRecoveryError ? (
+        <SessionRecoveryScreen
+          message={sessionRecoveryError}
+          onRetry={() => {
+            setShowWakeHint(false)
+            setCheckingSession(true)
+            setSessionRecoveryError(null)
+            setSessionAttempt((current) => current + 1)
           }}
+          onLogout={handleLogout}
         />
       ) : (
         <LoginScreen onLoggedIn={setUser} />
@@ -139,13 +192,61 @@ function App() {
   )
 }
 
-function LoadingScreen() {
+function LoadingScreen({ showWakeHint }: { showWakeHint: boolean }) {
   return (
     <main className="grid min-h-screen place-items-center px-4">
-      <div className={`${panelClass} flex items-center gap-3 rounded-[8px] px-5 py-4 text-base text-muted`}>
-        <Loader2 className="size-5 animate-spin text-accent" />
-        Carregando sessão
+      <div className={`${panelClass} max-w-[28rem] rounded-[10px] px-5 py-5 text-base text-muted`}>
+        <div className="flex items-center gap-3">
+          <Loader2 className="size-5 animate-spin text-accent" />
+          Carregando sessão
+        </div>
+        {showWakeHint ? (
+          <p className="mt-3 text-sm leading-6 text-muted">
+            Acordando o serviço. Isso pode levar até 1 minuto no plano gratuito.
+          </p>
+        ) : null}
       </div>
+    </main>
+  )
+}
+
+function SessionRecoveryScreen({
+  message,
+  onRetry,
+  onLogout,
+}: {
+  message: string
+  onRetry: () => void
+  onLogout: () => void
+}) {
+  return (
+    <main className="grid min-h-screen place-items-center px-4 py-10">
+      <section className={`${panelClass} w-full max-w-[460px] rounded-[10px] p-8`}>
+        <div className="mb-6 flex items-start gap-4">
+          <div className={`${brandMarkClass} rounded-full bg-surface-soft p-3`}>
+            <Loader2 className="size-6 text-text" />
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted">Recuperando sessão</p>
+            <h1 className="mt-1 text-2xl font-bold text-text">Não foi possível confirmar sua sessão agora</h1>
+            <p className="mt-3 text-sm leading-6 text-muted">{message}</p>
+            <p className="mt-3 text-sm leading-6 text-muted">
+              O serviço pode estar acordando no Render Free. Tente novamente em alguns instantes ou saia para limpar o token manualmente.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button className={`${buttonPrimaryClass} flex-1`} type="button" onClick={onRetry}>
+            <RefreshCcw className="size-4" />
+            Tentar novamente
+          </button>
+          <button className={`${buttonMutedClass} flex-1`} type="button" onClick={onLogout}>
+            <LogOut className="size-4" />
+            Sair
+          </button>
+        </div>
+      </section>
     </main>
   )
 }
@@ -164,8 +265,13 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
       setToken(token)
       onLoggedIn(user)
     } catch (err) {
-      clearToken()
-      toast.error(err instanceof ApiError && err.status === 401 ? 'Credenciais inválidas' : errorMessage(err, 'Não foi possível entrar'))
+      if (isUnauthorizedApiError(err)) {
+        toast.error('Credenciais inválidas')
+      } else if (isTransientApiError(err)) {
+        toast.error('Serviço indisponível no momento. Ele pode estar acordando no plano gratuito.')
+      } else {
+        toast.error(errorMessage(err, 'Não foi possível entrar'))
+      }
     } finally {
       setLoading(false)
     }
@@ -243,7 +349,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       setAppliedFilters(normalizedFilters)
       saveDashboardFilters(normalizedFilters)
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (isUnauthorizedApiError(err)) {
         onLogout()
         return
       }
@@ -255,8 +361,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   function handleSearch() {
     const normalizedFilters = normalizeDashboardFilters(draftFilters)
-    if (!isSummaryFilterValid(normalizedFilters)) {
-      toast.error('Preencha as datas inicial e final para consultar um intervalo personalizado')
+    const validationError = filterValidationMessage(normalizedFilters, 'summary')
+    if (validationError) {
+      toast.error(validationError)
       return
     }
 
@@ -264,8 +371,14 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   async function handleExport() {
-    if (!isExportFilterValid(appliedFilters)) {
-      toast.error('Selecione um período ou intervalo de datas para exportar o CSV')
+    if (!areDashboardFiltersEqual(draftFilters, appliedFilters)) {
+      toast.error('Clique em Buscar para aplicar o filtro antes de exportar.')
+      return
+    }
+
+    const exportError = filterValidationMessage(appliedFilters, 'export')
+    if (exportError) {
+      toast.error(exportError)
       return
     }
 
@@ -273,9 +386,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
     try {
       await downloadLeadsExport(buildFilters(appliedFilters))
-      toast.success('Download iniciado!')
+      toast.success('CSV baixado')
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (isUnauthorizedApiError(err)) {
         onLogout()
         return
       }
@@ -298,13 +411,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }
 
   useEffect(() => {
-    void fetchSummary(appliedFilters)
+    const timeoutId = window.setTimeout(() => {
+      void fetchSummary(appliedFilters)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const total = data?.total ?? 0
   const hasLeads = total > 0
-  const canExport = hasLeads && isExportFilterValid(appliedFilters)
+  const canExport = hasLeads
 
   return (
     <div className="min-h-screen text-base">
@@ -430,7 +549,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               disabled={exporting || !canExport || loading}
             >
               {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-              Baixar CSV
+              {exporting ? 'Gerando CSV...' : 'Baixar CSV'}
             </button>
           </div>
 
@@ -559,7 +678,7 @@ function loadStoredDashboardFilters(): DashboardFilters {
       return { ...defaultDashboardFilters }
     }
     const stored = normalizeDashboardFilters(JSON.parse(raw) as Partial<DashboardFilters>)
-    if (stored.interval === 'custom' && !hasCompleteCustomRange(stored)) {
+    if (filterValidationMessage(stored, 'summary')) {
       return { ...defaultDashboardFilters }
     }
     return stored
@@ -576,22 +695,33 @@ function saveDashboardFilters(filters: DashboardFilters) {
   }
 }
 
-function isExportFilterValid(filters: DashboardFilters) {
-  if (!isSummaryFilterValid(filters)) {
-    return false
-  }
-  return filters.interval !== 'all'
-}
-
-function isSummaryFilterValid(filters: DashboardFilters) {
+function filterValidationMessage(filters: DashboardFilters, mode: 'summary' | 'export') {
   if (filters.interval === 'custom') {
-    return hasCompleteCustomRange(filters)
+    if (!filters.from) {
+      return mode === 'export'
+        ? 'Preencha a data inicial antes de exportar o CSV.'
+        : 'Preencha a data inicial para consultar um intervalo personalizado.'
+    }
+    if (!filters.to) {
+      return mode === 'export'
+        ? 'Preencha a data final antes de exportar o CSV.'
+        : 'Preencha a data final para consultar um intervalo personalizado.'
+    }
+    if (filters.to < filters.from) {
+      return 'A data final deve ser maior ou igual à data inicial.'
+    }
+    return null
   }
-  return true
+
+  if (mode === 'export' && filters.interval === 'all') {
+    return 'Selecione um período ou intervalo de datas para exportar o CSV.'
+  }
+
+  return null
 }
 
-function hasCompleteCustomRange(filters: DashboardFilters) {
-  return Boolean(filters.from && filters.to)
+function areDashboardFiltersEqual(left: DashboardFilters, right: DashboardFilters) {
+  return left.interval === right.interval && left.from === right.from && left.to === right.to
 }
 
 function formatDateTime(value: string) {
@@ -642,6 +772,14 @@ function describeActiveRange(interval: string, from: string, to: string) {
     default:
       return 'Todo o histórico'
   }
+}
+
+function sessionRecoveryMessage(error: unknown) {
+  if (isTransientApiError(error)) {
+    return 'A conexão não foi concluída agora. O serviço pode estar acordando no plano gratuito.'
+  }
+
+  return errorMessage(error, 'Não foi possível restaurar a sessão no momento.')
 }
 
 export default App

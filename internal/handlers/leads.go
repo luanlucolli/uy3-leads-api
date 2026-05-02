@@ -1,13 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,12 +15,8 @@ import (
 	"github.com/luanlucolli/uy3-leads-api/internal/models"
 )
 
-var brtLocation = time.FixedZone("BRT", -3*3600)
-
 const (
 	defaultExportBatchSize = 500
-	minExportBatchSize     = 100
-	maxExportBatchSize     = 1000
 	maxExportWindowDays    = 180
 )
 
@@ -46,11 +42,14 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().In(brtLocation)
 	where, args := buildSummaryWhereAt(filters, now)
 	response := models.SummaryResponse{}
-	if err := h.db.QueryRowContext(
-		r.Context(),
+	summaryCtx, cancelSummary := context.WithTimeout(r.Context(), leadsSummaryTimeout)
+	err = h.db.QueryRowContext(
+		summaryCtx,
 		"SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily"+where,
 		args...,
-	).Scan(&response.Total); err != nil {
+	).Scan(&response.Total)
+	cancelSummary()
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar resumo de leads")
 		return
 	}
@@ -61,7 +60,9 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	var lastLeadAt sql.NullString
 	lastLeadQuery, lastLeadArgs := buildLastLeadQueryAt(filters, now)
-	err = h.db.QueryRowContext(r.Context(), lastLeadQuery, lastLeadArgs...).Scan(&lastLeadAt)
+	lastLeadCtx, cancelLastLead := context.WithTimeout(r.Context(), leadsSummaryTimeout)
+	err = h.db.QueryRowContext(lastLeadCtx, lastLeadQuery, lastLeadArgs...).Scan(&lastLeadAt)
+	cancelLastLead()
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar ultimo lead")
 		return
@@ -86,6 +87,14 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().In(brtLocation)
 	where, args := buildLeadWhereAt(filters, now)
+	if err := h.ensureExportRowsExist(r.Context(), where, args); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "nenhum lead encontrado para exportar")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "erro ao preparar exportacao CSV")
+		return
+	}
 
 	filename := "leads_" + time.Now().Format("20060102_150405") + ".csv"
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -106,7 +115,7 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	record := make([]string, len(headers))
 
 	flusher, canFlush := w.(http.Flusher)
-	batchSize := exportBatchSize()
+	batchSize := defaultExportBatchSize
 	var lastDate string
 	var lastID int64
 	hasCursor := false
@@ -141,8 +150,10 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			LIMIT %d
 		`, batchWhere, batchSize)
 
-		rows, err := h.db.QueryContext(r.Context(), query, batchArgs...)
+		batchCtx, cancelBatch := context.WithTimeout(r.Context(), exportBatchDBTimeout)
+		rows, err := h.db.QueryContext(batchCtx, query, batchArgs...)
 		if err != nil {
+			cancelBatch()
 			log.Printf("Erro na exportação CSV ao buscar leads: %v", err)
 			return
 		}
@@ -153,12 +164,14 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 				_ = rows.Close()
+				cancelBatch()
 				return
 			}
 			fillCSVRecord(record, lead)
 			if err := csvWriter.Write(record); err != nil {
 				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 				_ = rows.Close()
+				cancelBatch()
 				return
 			}
 			lastDate = lead.ReceivedAt
@@ -170,12 +183,15 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Err(); err != nil {
 			log.Printf("Erro na exportação CSV após streaming: %v", err)
 			_ = rows.Close()
+			cancelBatch()
 			return
 		}
 		if err := rows.Close(); err != nil {
 			log.Printf("Erro ao encerrar exportação CSV: %v", err)
+			cancelBatch()
 			return
 		}
+		cancelBatch()
 
 		csvWriter.Flush()
 		if err := csvWriter.Error(); err != nil {
@@ -251,22 +267,17 @@ func validateDateFilters(filters models.LeadFilters, opts dateFilterValidationOp
 	return nil
 }
 
-func exportBatchSize() int {
-	raw := strings.TrimSpace(os.Getenv("EXPORT_CSV_BATCH_SIZE"))
-	if raw == "" {
-		return defaultExportBatchSize
-	}
-	value, err := strconv.Atoi(raw)
+func (h *LeadsHandler) ensureExportRowsExist(parent context.Context, where string, args []any) error {
+	checkCtx, cancel := context.WithTimeout(parent, leadsSummaryTimeout)
+	defer cancel()
+
+	var found int
+	err := h.db.QueryRowContext(checkCtx, "SELECT 1 FROM leads"+where+" LIMIT 1", args...).Scan(&found)
 	if err != nil {
-		return defaultExportBatchSize
+		return err
 	}
-	if value < minExportBatchSize {
-		return minExportBatchSize
-	}
-	if value > maxExportBatchSize {
-		return maxExportBatchSize
-	}
-	return value
+
+	return nil
 }
 
 func csvHeaders() []string {

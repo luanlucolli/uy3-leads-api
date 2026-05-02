@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -63,7 +64,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, user, err := h.authService.Login(r.Context(), req.Email, req.Password)
+	loginCtx, cancel := context.WithTimeout(r.Context(), loginDBTimeout)
+	defer cancel()
+
+	token, user, err := h.authService.Login(loginCtx, req.Email, req.Password)
 	if err != nil {
 		if err.Error() == "credenciais invalidas" {
 			writeError(w, http.StatusUnauthorized, "credenciais inválidas")
@@ -91,15 +95,9 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authService.CurrentUser(r.Context(), claims.UserID)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":    user.ID,
-		"email": user.Email,
+		"id":    claims.UserID,
+		"email": claims.Email,
 	})
 }
 

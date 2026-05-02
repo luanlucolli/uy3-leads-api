@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -62,35 +63,41 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		TypeWebhook:                 textField(payload, "typeWebook", "typeWebhook", "type_webhook"),
 	}
 
-	tx, err := h.db.BeginTx(r.Context(), nil)
+	now := time.Now()
+	receivedAtUTC := now.UTC().Format("2006-01-02 15:04:05")
+	summaryDate := now.In(brtLocation).Format("2006-01-02")
+
+	dbCtx, cancel := context.WithTimeout(r.Context(), webhookDBTimeout)
+	defer cancel()
+
+	tx, err := h.db.BeginTx(dbCtx, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
 		return
 	}
 	defer tx.Rollback()
 
-	result, err := tx.ExecContext(r.Context(), `
+	result, err := tx.ExecContext(dbCtx, `
 		INSERT INTO leads (
 			cpf, nome_trabalhador, status, elegivel_emprestimo,
 			valor_liberado, margem_disponivel, numero_parcelas,
 			data_hora_validade_solicitacao, data_nascimento, data_admissao,
 			is_mei, is_judicial_recovery, pep_codigo, active_fgts_debts,
-			type_webhook
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			type_webhook, received_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lead.CPF, lead.NomeTrabalhador, lead.Status, lead.ElegivelEmprestimo,
 		lead.ValorLiberado, lead.MargemDisponivel, lead.NumeroParcelas,
 		lead.DataHoraValidadeSolicitacao, lead.DataNascimento, lead.DataAdmissao,
 		lead.IsMEI, lead.IsJudicialRecovery, lead.PEPCodigo, lead.ActiveFGTSDebts,
-		lead.TypeWebhook,
+		lead.TypeWebhook, receivedAtUTC,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
 		return
 	}
 
-	summaryDate := time.Now().In(time.FixedZone("BRT", -3*3600)).Format("2006-01-02")
-	if _, err := tx.ExecContext(r.Context(), `
+	if _, err := tx.ExecContext(dbCtx, `
 		INSERT INTO leads_summary_daily (data, quantidade)
 		VALUES (?, 1)
 		ON CONFLICT(data) DO UPDATE

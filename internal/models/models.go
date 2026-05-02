@@ -42,16 +42,6 @@ type Lead struct {
 	ReceivedAt                  string  `json:"received_at"`
 }
 
-type Pagination struct {
-	Items       []Lead `json:"items"`
-	Total       int64  `json:"total"`
-	CurrentPage int    `json:"current_page"`
-	PerPage     int    `json:"per_page"`
-	TotalPages  int    `json:"total_pages"`
-	HasNext     bool   `json:"has_next"`
-	HasPrevious bool   `json:"has_previous"`
-}
-
 type SummaryResponse struct {
 	Total      int64  `json:"total"`
 	LastLeadAt string `json:"last_lead_at,omitempty"`

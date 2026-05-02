@@ -48,7 +48,7 @@ const defaultDashboardFilters: DashboardFilters = {
   to: '',
 }
 const wakeHintDelayMs = 4_000
-const companyName = (import.meta.env.VITE_COMPANY_NAME ?? '').trim()
+const companyName = readCompanyName()
 const headerSubtitle = companyName || 'Gestão de Leads'
 const headerLogoSrc = '/uy3-logo.png'
 
@@ -78,6 +78,19 @@ const buttonMutedClass =
 
 const buttonDangerClass =
   `${buttonBaseClass} border-[rgb(239_68_68_/_38%)] bg-[linear-gradient(180deg,rgb(239_68_68_/_18%),rgb(239_68_68_/_12%))] text-[#fff4f4] hover:border-[rgb(239_68_68_/_55%)] hover:bg-[linear-gradient(180deg,rgb(239_68_68_/_26%),rgb(239_68_68_/_18%))]`
+
+function readCompanyName() {
+  const metaValue = document
+    .querySelector('meta[name="uy3-company-name"]')
+    ?.getAttribute('content')
+    ?.trim()
+
+  if (metaValue && metaValue !== '__UY3_COMPANY_NAME__') {
+    return metaValue
+  }
+
+  return (import.meta.env.VITE_COMPANY_NAME ?? '').trim()
+}
 
 function HeaderBrandLogo() {
   const [imageAvailable, setImageAvailable] = useState(true)

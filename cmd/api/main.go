@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"html"
 	"io/fs"
 	"log"
 	"net/http"
@@ -138,8 +139,7 @@ func spaHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestPath := strings.TrimPrefix(r.URL.Path, "/")
 		if requestPath == "" {
-			w.Header().Set("Cache-Control", "no-cache")
-			fileServer.ServeHTTP(w, r)
+			serveSPAIndex(w, dist)
 			return
 		}
 
@@ -151,22 +151,30 @@ func spaHandler() http.HandlerFunc {
 				if strings.HasPrefix(requestPath, "assets/") {
 					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 				} else if requestPath == "index.html" {
-					w.Header().Set("Cache-Control", "no-cache")
+					serveSPAIndex(w, dist)
+					return
 				}
 				fileServer.ServeHTTP(w, r)
 				return
 			}
 		}
 
-		index, err := fs.ReadFile(dist, "index.html")
-		if err != nil {
-			http.Error(w, "Frontend indisponível", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(index)
+		serveSPAIndex(w, dist)
 	}
+}
+
+func serveSPAIndex(w http.ResponseWriter, dist fs.FS) {
+	index, err := fs.ReadFile(dist, "index.html")
+	if err != nil {
+		http.Error(w, "Frontend indisponível", http.StatusInternalServerError)
+		return
+	}
+
+	companyName := html.EscapeString(strings.TrimSpace(os.Getenv("VITE_COMPANY_NAME")))
+	indexHTML := strings.ReplaceAll(string(index), "__UY3_COMPANY_NAME__", companyName)
+
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(indexHTML))
 }

@@ -48,6 +48,7 @@ const defaultDashboardFilters: DashboardFilters = {
   to: '',
 }
 const wakeHintDelayMs = 4_000
+const metricsPollIntervalMs = 2 * 60 * 1000
 const companyName = readCompanyName()
 const headerSubtitle = companyName || 'Gestão de Leads'
 const headerLogoSrc = '/uy3-logo.png'
@@ -398,8 +399,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [exporting, setExporting] = useState(false)
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
-  async function fetchSummary(nextFilters = appliedFilters) {
-    setLoading(true)
+  async function fetchSummary(nextFilters = appliedFilters, options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setLoading(true)
+    }
 
     try {
       const normalizedFilters = normalizeDashboardFilters(nextFilters)
@@ -414,7 +417,9 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
       }
       toast.error(errorMessage(err, 'Não foi possível carregar os leads'))
     } finally {
-      setLoading(false)
+      if (!options?.silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -479,6 +484,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void fetchSummary(appliedFilters, { silent: true })
+    }, metricsPollIntervalMs)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedFilters])
 
   const total = data?.total ?? 0
   const hasLeads = total > 0

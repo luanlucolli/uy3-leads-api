@@ -272,7 +272,7 @@ func (h *LeadsHandler) ensureExportRowsExist(parent context.Context, where strin
 	defer cancel()
 
 	var found int
-	err := h.db.QueryRowContext(checkCtx, "SELECT 1 FROM leads"+where+" LIMIT 1", args...).Scan(&found)
+	err := h.db.QueryRowContext(checkCtx, "SELECT 1 FROM leads"+where+" ORDER BY received_at DESC, id DESC LIMIT 1", args...).Scan(&found)
 	if err != nil {
 		return err
 	}

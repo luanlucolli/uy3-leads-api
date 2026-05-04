@@ -56,7 +56,8 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.db.BeginTx(dbCtx, nil)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
+		logHandlerError(r, "webhook_begin_tx", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao salvar lead. Tente novamente em instantes.")
 		return
 	}
 	defer tx.Rollback()
@@ -77,7 +78,8 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		lead.TypeWebhook, receivedAtUTC,
 	)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
+		logHandlerError(r, "webhook_insert_lead", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao salvar lead. Tente novamente em instantes.")
 		return
 	}
 
@@ -87,12 +89,14 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT(data) DO UPDATE
 		SET quantidade = leads_summary_daily.quantidade + 1
 	`, summaryDate); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao atualizar resumo diario")
+		logHandlerError(r, "webhook_update_summary", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao atualizar resumo diário. Tente novamente em instantes.")
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao salvar lead")
+		logHandlerError(r, "webhook_commit", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao salvar lead. Tente novamente em instantes.")
 		return
 	}
 

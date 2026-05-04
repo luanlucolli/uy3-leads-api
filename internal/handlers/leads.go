@@ -50,7 +50,8 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	).Scan(&response.Total)
 	cancelSummary()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao carregar resumo de leads")
+		logHandlerError(r, "leads_summary", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao carregar resumo de leads. Tente novamente em instantes.")
 		return
 	}
 	if response.Total == 0 {
@@ -64,7 +65,8 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRowContext(lastLeadCtx, lastLeadQuery, lastLeadArgs...).Scan(&lastLeadAt)
 	cancelLastLead()
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusInternalServerError, "erro ao carregar ultimo lead")
+		logHandlerError(r, "leads_last_lead", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao carregar último lead. Tente novamente em instantes.")
 		return
 	}
 	if lastLeadAt.Valid {
@@ -92,7 +94,8 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "nenhum lead encontrado para exportar")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "erro ao preparar exportacao CSV")
+		logHandlerError(r, "export_ensure_rows_exist", err)
+		writeServiceUnavailable(w, "Serviço temporariamente indisponível ao preparar exportação CSV. Tente novamente em instantes.")
 		return
 	}
 

@@ -41,7 +41,7 @@ func NewAuthHandler(authService *auth.Service) *AuthHandler {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
-	if !h.loginLimiter.allow(ip, time.Now()) {
+	if h.loginLimiter.blocked(ip, time.Now()) {
 		writeError(w, http.StatusTooManyRequests, "muitas tentativas de login, tente novamente em alguns minutos")
 		return
 	}
@@ -70,10 +70,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	token, user, err := h.authService.Login(loginCtx, req.Email, req.Password)
 	if err != nil {
 		if err.Error() == "credenciais invalidas" {
+			h.loginLimiter.recordFailure(ip, time.Now())
 			writeError(w, http.StatusUnauthorized, "credenciais inválidas")
 		} else {
-			// Erros de banco de dados, timeout, etc.
-			writeError(w, http.StatusInternalServerError, "serviço indisponível no momento")
+			logHandlerError(r, "login", err)
+			writeServiceUnavailable(w, "Serviço temporariamente indisponível. Tente novamente em instantes.")
 		}
 		return
 	}
@@ -124,7 +125,20 @@ func newLoginRateLimiter(maxHits int, window, entryTTL time.Duration) *loginRate
 	}
 }
 
-func (l *loginRateLimiter) allow(key string, now time.Time) bool {
+func (l *loginRateLimiter) blocked(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.cleanup(now)
+	entry := l.entries[key]
+	if entry.windowFrom.IsZero() || now.Sub(entry.windowFrom) > l.window {
+		return false
+	}
+
+	return entry.count >= l.maxHits
+}
+
+func (l *loginRateLimiter) recordFailure(key string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -132,6 +146,7 @@ func (l *loginRateLimiter) allow(key string, now time.Time) bool {
 	if _, ok := l.entries[key]; !ok && len(l.entries) >= loginRateLimitMaxKeys {
 		l.dropOldest()
 	}
+
 	entry := l.entries[key]
 	if entry.windowFrom.IsZero() || now.Sub(entry.windowFrom) > l.window {
 		entry = loginRateEntry{windowFrom: now}
@@ -139,8 +154,6 @@ func (l *loginRateLimiter) allow(key string, now time.Time) bool {
 	entry.count++
 	entry.lastTouched = now
 	l.entries[key] = entry
-
-	return entry.count <= l.maxHits
 }
 
 func (l *loginRateLimiter) reset(key string) {

@@ -31,10 +31,10 @@ func Open(databaseURL string) (*sql.DB, error) {
 	}
 
 	db := sql.OpenDB(connector)
-	db.SetMaxOpenConns(2)
+	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	db.SetConnMaxIdleTime(30 * time.Second)
-	db.SetConnMaxLifetime(10 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
+	db.SetConnMaxLifetime(30 * time.Minute)
 
 	return db, nil
 }

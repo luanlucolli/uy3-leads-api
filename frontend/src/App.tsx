@@ -52,6 +52,8 @@ const metricsPollIntervalMs = 2 * 60 * 1000
 const companyName = readCompanyName()
 const headerSubtitle = companyName || 'Gestão de Leads'
 const headerLogoSrc = '/uy3-logo.png'
+const transientServiceScreenMessage =
+  'Serviço temporariamente indisponível. Ele pode estar acordando ou restabelecendo conexão com o banco. Tente novamente em instantes.'
 
 const panelClass =
   'border border-border bg-[rgb(21_25_34_/_88%)] shadow-[inset_0_1px_0_rgb(255_255_255_/_4%),0_18px_48px_rgb(0_0_0_/_28%)]'
@@ -240,7 +242,7 @@ function LoadingScreen({ showWakeHint }: { showWakeHint: boolean }) {
         </div>
         {showWakeHint ? (
           <p className="mt-3 text-sm leading-6 text-muted">
-            Acordando o serviço. Isso pode levar até 1 minuto e meio no plano gratuito.
+            Isso pode levar alguns instantes no plano gratuito.
           </p>
         ) : null}
       </div>
@@ -269,7 +271,7 @@ function SessionRecoveryScreen({
             <h1 className="mt-1 text-2xl font-bold text-text">Não foi possível confirmar sua sessão agora</h1>
             <p className="mt-3 text-sm leading-6 text-muted">{message}</p>
             <p className="mt-3 text-sm leading-6 text-muted">
-              O serviço pode estar acordando no Render Free. Isso pode levar até 1 minuto e meio. Tente novamente em alguns instantes ou saia para limpar o token manualmente.
+              O serviço pode estar acordando no Render Free ou restabelecendo conexão com o banco.
             </p>
           </div>
         </div>
@@ -322,7 +324,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
       if (isUnauthorizedApiError(err)) {
         toast.error('Credenciais inválidas')
       } else if (isTransientApiError(err)) {
-        toast.error('Serviço indisponível no momento. Ele pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.')
+        toast.error(transientServiceScreenMessage)
       } else {
         toast.error(errorMessage(err, 'Não foi possível entrar'))
       }
@@ -382,7 +384,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: User) => void }) {
           </button>
           {showWakeHint ? (
             <p className="text-sm leading-6 text-muted">
-              Acordando o serviço. Isso pode levar até 1 minuto e meio no plano gratuito.
+              O serviço pode estar acordando ou restabelecendo conexão com o banco.
             </p>
           ) : null}
         </form>
@@ -415,7 +417,11 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         onLogout()
         return
       }
-      toast.error(errorMessage(err, 'Não foi possível carregar os leads'))
+      if (isTransientApiError(err)) {
+        toast.error('Não foi possível carregar as métricas agora. O serviço pode estar temporariamente indisponível. Tente novamente em instantes.')
+      } else {
+        toast.error(errorMessage(err, 'Não foi possível carregar os leads'))
+      }
     } finally {
       if (!options?.silent) {
         setLoading(false)
@@ -865,7 +871,7 @@ function describeActiveRange(interval: string, from: string, to: string) {
 
 function sessionRecoveryMessage(error: unknown) {
   if (isTransientApiError(error)) {
-    return 'A conexão não foi concluída agora. O serviço pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.'
+    return 'A conexão não foi concluída agora. O serviço pode estar acordando no Render Free ou restabelecendo conexão com o banco.'
   }
 
   return errorMessage(error, 'Não foi possível restaurar a sessão no momento.')

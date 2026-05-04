@@ -49,10 +49,10 @@ func main() {
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second,
 		WriteTimeout:      10 * time.Minute,
-		IdleTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	serverErr := make(chan error, 1)
@@ -69,7 +69,7 @@ func main() {
 	case <-shutdownCtx.Done():
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown: %v", err)
@@ -95,13 +95,15 @@ func buildRouter(db *sql.DB, authService *auth.Service, webhookSecret string) ht
 
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		if err := db.PingContext(ctx); err != nil {
+			log.Printf("request_id=%s operation=ready_database_ping error=%v", chimiddleware.GetReqID(r.Context()), err)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":    "error",
 				"component": "database",
+				"error":     "database unavailable",
 			})
 			return
 		}

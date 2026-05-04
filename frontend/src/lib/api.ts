@@ -25,10 +25,10 @@ type PerformRequestOptions = RequestInit & {
 
 const TOKEN_KEY = 'uy3_token'
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
-const defaultRequestTimeoutMs = 110_000
+const defaultRequestTimeoutMs = 150_000
 const exportRequestTimeoutMs = 10 * 60 * 1000
-const transientRetryDelaysMs = [2_500]
-const transientStatuses = new Set([502, 503, 504])
+const transientRetryDelaysMs = [3_000, 8_000]
+const transientStatuses = new Set([500, 502, 503, 504])
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -154,14 +154,14 @@ async function fetchWithTimeout(input: string, options: RequestInit, timeoutMs: 
 }
 
 async function buildApiError(response: Response) {
-  const contentType = response.headers.get('Content-Type') ?? ''
-  let message = friendlyMessageForStatus(response.status)
+	const contentType = response.headers.get('Content-Type') ?? ''
+	let message = friendlyMessageForStatus(response.status)
 
-  if (contentType.includes('application/json')) {
-    try {
-      const payload = await response.json()
-      if (payload && typeof payload.error === 'string' && payload.error.trim() !== '') {
-        message = payload.error.trim()
+	if (response.status < 500 && contentType.includes('application/json')) {
+		try {
+			const payload = await response.json()
+			if (payload && typeof payload.error === 'string' && payload.error.trim() !== '') {
+				message = payload.error.trim()
       }
     } catch {
       // Mantemos a mensagem amigavel padrao quando o JSON vem invalido.
@@ -196,26 +196,23 @@ function shouldRetry(error: ApiError, attempt: number) {
 }
 
 function friendlyMessageForStatus(status: number) {
-  if (transientStatuses.has(status)) {
+  if (status >= 500 || transientStatuses.has(status)) {
     return transientServiceMessage()
-  }
-  if (status >= 500) {
-    return 'Serviço indisponível no momento. Tente novamente em instantes.'
   }
 
   return `Erro ${status}`
 }
 
 function transientServiceMessage() {
-  return 'Serviço indisponível no momento. Ele pode estar acordando no plano gratuito e isso pode levar até 1 minuto e meio.'
+  return 'Serviço temporariamente indisponível. Ele pode estar acordando ou restabelecendo conexão com o banco. Tente novamente em instantes.'
 }
 
 function unexpectedJSONResponseMessage() {
-  return 'O serviço respondeu com um formato inesperado. Ele pode estar acordando no plano gratuito.'
+  return 'O serviço respondeu com um formato inesperado. Aguarde alguns instantes e tente novamente.'
 }
 
 function invalidJSONResponseMessage() {
-  return 'O serviço respondeu com um JSON inválido. Tente novamente em instantes.'
+  return 'O serviço respondeu de forma incompleta. Aguarde alguns instantes e tente novamente.'
 }
 
 function isJSONContentType(contentType: string) {

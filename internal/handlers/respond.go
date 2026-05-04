@@ -14,3 +14,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
+
+func writeServiceUnavailable(w http.ResponseWriter, message string) {
+	writeError(w, http.StatusServiceUnavailable, message)
+}

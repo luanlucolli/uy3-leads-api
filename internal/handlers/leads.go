@@ -362,7 +362,7 @@ func fillCSVRecord(record []string, lead models.Lead) {
 	record[4] = formatDecimalBR(lead.ValorLiberado)
 	record[5] = formatDecimalBR(lead.MargemDisponivel)
 	record[6] = strconv.FormatInt(lead.NumeroParcelas, 10)
-	record[7] = formatDateBR(lead.ReceivedAt, true)
+	record[7] = formatUTCDateBR(lead.ReceivedAt, true)
 	record[8] = formatDateBR(lead.DataHoraValidadeSolicitacao, true)
 	record[9] = formatDateBR(lead.DataNascimento, false)
 	record[10] = formatDateBR(lead.DataAdmissao, false)
@@ -516,6 +516,64 @@ func formatDateBR(raw string, includeTime bool) string {
 		return ""
 	}
 
+	zonedLayouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+	}
+	localLayouts := []string{
+		"02012006150405",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"02/01/2006 15:04:05",
+	}
+	dateOnlyLayouts := []string{
+		"02012006",
+		"2006-01-02",
+		"02/01/2006",
+	}
+
+	for _, layout := range zonedLayouts {
+		parsed, err := time.Parse(layout, raw)
+		if err != nil {
+			continue
+		}
+		if includeTime && hasTime(layout, raw) {
+			return parsed.In(brtLocation).Format("02/01/2006 15:04:05")
+		}
+		return parsed.Format("02/01/2006")
+	}
+
+	for _, layout := range localLayouts {
+		parsed, err := time.ParseInLocation(layout, raw, brtLocation)
+		if err != nil {
+			continue
+		}
+		if includeTime && hasTime(layout, raw) {
+			return parsed.Format("02/01/2006 15:04:05")
+		}
+		return parsed.Format("02/01/2006")
+	}
+
+	for _, layout := range dateOnlyLayouts {
+		parsed, err := time.ParseInLocation(layout, raw, brtLocation)
+		if err != nil {
+			continue
+		}
+		return parsed.Format("02/01/2006")
+	}
+
+	return raw
+}
+
+func formatUTCDateBR(raw string, includeTime bool) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
 	layouts := []string{
 		time.RFC3339Nano,
 		time.RFC3339,
@@ -544,7 +602,7 @@ func formatDateBR(raw string, includeTime bool) string {
 }
 
 func hasTime(layout, raw string) bool {
-	return strings.Contains(layout, "15:04") || strings.Contains(raw, "T") || strings.Contains(raw, ":")
+	return strings.Contains(layout, "15:04") || strings.Contains(layout, "150405") || strings.Contains(raw, "T") || strings.Contains(raw, ":")
 }
 
 func formatDateForAPI(raw string) string {

@@ -138,7 +138,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"typeWebook\": \"lead.created\",\n  \"cpf\": \"12345678900\",\n  \"nomeTrabalhador\": \"Maria da Silva\",\n  \"status\": \"aprovado\",\n  \"elegivelEmprestimo\": true,\n  \"valorLiberado\": 3500.75,\n  \"margemDisponivel\": 412.33,\n  \"numeroParcelas\": 12,\n  \"dataHoraValidadeSolicitacao\": \"2026-04-28T20:00:00Z\",\n  \"dataNascimento\": \"1990-05-20\",\n  \"dataAdmissao\": \"2020-01-10\",\n  \"isMei\": false,\n  \"isJudicialRecovery\": false,\n  \"pepCodigo\": false,\n  \"activeFgtsDebts\": true\n}"
+              "raw": "{\n  \"cpf\": \"63430832357\",\n  \"is_mei\": false,\n  \"status\": \"ATIVA\",\n  \"typeWebook\": \"LEADS_CLT\",\n  \"dataAdmissao\": \"08102025\",\n  \"valorLiberado\": 1500,\n  \"dataNascimento\": \"09072006\",\n  \"numeroParcelas\": 7,\n  \"nomeTrabalhador\": \"KAUE DO NASCIMENTO MORAIS\",\n  \"codigoRequisicao\": \"23fafd80-07e1-492d-b671-a202e4b51ee8\",\n  \"margemDisponivel\": 320.76,\n  \"active_fgts_debts\": null,\n  \"elegivelEmprestimo\": true,\n  \"all_branch_employees\": null,\n  \"is_judicial_recovery\": false,\n  \"numeroInscricaoEmpregador\": \"30045533\",\n  \"pessoaExpostaPoliticamente\": {\n    \"Codigo\": 0,\n    \"Descricao\": \"Pessoa Nao Exposta Politicamente\"\n  },\n  \"dataHoraValidadeSolicitacao\": \"05052026111027\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/webhook",

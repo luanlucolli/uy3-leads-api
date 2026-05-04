@@ -45,23 +45,7 @@ func (h *WebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lead := webhookLead{
-		CPF:                         textField(payload, "cpf", "CPF"),
-		NomeTrabalhador:             textField(payload, "nome_trabalhador", "nomeTrabalhador", "NomeTrabalhador", "nome", "name"),
-		Status:                      textField(payload, "status", "Status"),
-		ElegivelEmprestimo:          textField(payload, "elegivel_emprestimo", "elegivelEmprestimo", "elegivelParaEmprestimo", "eligibleLoan"),
-		ValorLiberado:               floatField(payload, "valor_liberado", "valorLiberado", "releasedAmount"),
-		MargemDisponivel:            floatField(payload, "margem_disponivel", "margemDisponivel", "availableMargin"),
-		NumeroParcelas:              intField(payload, "numero_parcelas", "numeroParcelas", "numberOfInstallments"),
-		DataHoraValidadeSolicitacao: textField(payload, "data_hora_validade_solicitacao", "dataHoraValidadeSolicitacao", "dataHoraValidadeDaSolicitacao", "validadeSolicitacao", "requestExpirationDate"),
-		DataNascimento:              textField(payload, "data_nascimento", "dataNascimento", "birthDate"),
-		DataAdmissao:                textField(payload, "data_admissao", "dataAdmissao", "admissionDate"),
-		IsMEI:                       textField(payload, "is_mei", "isMei", "isMEI"),
-		IsJudicialRecovery:          textField(payload, "is_judicial_recovery", "isJudicialRecovery"),
-		PEPCodigo:                   textField(payload, "pep_codigo", "pepCodigo", "pepCode"),
-		ActiveFGTSDebts:             textField(payload, "active_fgts_debts", "activeFgtsDebts", "activeFGTSDebts"),
-		TypeWebhook:                 textField(payload, "typeWebook", "typeWebhook", "type_webhook"),
-	}
+	lead := parseWebhookLead(payload)
 
 	now := time.Now()
 	receivedAtUTC := now.UTC().Format("2006-01-02 15:04:05")
@@ -134,6 +118,26 @@ type webhookLead struct {
 	TypeWebhook                 string
 }
 
+func parseWebhookLead(payload map[string]any) webhookLead {
+	return webhookLead{
+		CPF:                         textField(payload, "cpf", "CPF"),
+		NomeTrabalhador:             textField(payload, "nome_trabalhador", "nomeTrabalhador", "NomeTrabalhador", "nome", "name"),
+		Status:                      textField(payload, "status", "Status"),
+		ElegivelEmprestimo:          textField(payload, "elegivel_emprestimo", "elegivelEmprestimo", "elegivelParaEmprestimo", "eligibleLoan"),
+		ValorLiberado:               floatField(payload, "valor_liberado", "valorLiberado", "releasedAmount"),
+		MargemDisponivel:            floatField(payload, "margem_disponivel", "margemDisponivel", "availableMargin"),
+		NumeroParcelas:              intField(payload, "numero_parcelas", "numeroParcelas", "numberOfInstallments"),
+		DataHoraValidadeSolicitacao: normalizeCompactDateTime(textField(payload, "data_hora_validade_solicitacao", "dataHoraValidadeSolicitacao", "dataHoraValidadeDaSolicitacao", "validadeSolicitacao", "requestExpirationDate")),
+		DataNascimento:              normalizeCompactDate(textField(payload, "data_nascimento", "dataNascimento", "birthDate")),
+		DataAdmissao:                normalizeCompactDate(textField(payload, "data_admissao", "dataAdmissao", "admissionDate")),
+		IsMEI:                       textField(payload, "is_mei", "isMei", "isMEI"),
+		IsJudicialRecovery:          textField(payload, "is_judicial_recovery", "isJudicialRecovery"),
+		PEPCodigo:                   extractPEPCodigo(payload),
+		ActiveFGTSDebts:             textField(payload, "active_fgts_debts", "activeFgtsDebts", "activeFGTSDebts"),
+		TypeWebhook:                 textField(payload, "typeWebook", "typeWebhook", "type_webhook"),
+	}
+}
+
 func textField(payload map[string]any, keys ...string) string {
 	value, ok := lookup(payload, keys...)
 	if !ok || value == nil {
@@ -149,6 +153,62 @@ func textField(payload map[string]any, keys ...string) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(v))
 	}
+}
+
+func extractPEPCodigo(payload map[string]any) string {
+	if pep := textField(payload, "pep_codigo", "pepCodigo", "pepCode"); pep != "" {
+		return pep
+	}
+
+	return nestedTextField(payload, []string{"pessoaExpostaPoliticamente"}, "Codigo", "codigo")
+}
+
+func nestedTextField(payload map[string]any, containers []string, keys ...string) string {
+	for _, container := range containers {
+		value, ok := lookup(payload, container)
+		if !ok || value == nil {
+			continue
+		}
+
+		nested, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if nestedValue := textField(nested, keys...); nestedValue != "" {
+			return nestedValue
+		}
+	}
+
+	return ""
+}
+
+func normalizeCompactDate(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) != len("02012006") {
+		return raw
+	}
+
+	parsed, err := time.Parse("02012006", raw)
+	if err != nil {
+		return raw
+	}
+
+	return parsed.Format("2006-01-02")
+}
+
+func normalizeCompactDateTime(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) != len("02012006150405") {
+		return raw
+	}
+
+	parsed, err := time.ParseInLocation("02012006150405", raw, brtLocation)
+	if err != nil {
+		return raw
+	}
+
+	return parsed.Format("2006-01-02 15:04:05")
 }
 
 func floatField(payload map[string]any, keys ...string) float64 {

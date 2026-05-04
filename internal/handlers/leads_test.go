@@ -18,13 +18,13 @@ func TestFormatDateForAPIConvertsUTCToBRT(t *testing.T) {
 	}
 }
 
-func TestFormatDateBRConvertsUTCToBRTOnce(t *testing.T) {
+func TestFormatUTCDateBRConvertsUTCToBRTOnce(t *testing.T) {
 	raw := "2026-05-01 00:46:51"
 
-	got := formatDateBR(raw, true)
+	got := formatUTCDateBR(raw, true)
 
 	if got != "30/04/2026 21:46:51" {
-		t.Fatalf("formatDateBR(%q, true) = %q", raw, got)
+		t.Fatalf("formatUTCDateBR(%q, true) = %q", raw, got)
 	}
 }
 
@@ -35,6 +35,36 @@ func TestFormatDateBRKeepsDateOnlyWithoutTimezoneShift(t *testing.T) {
 
 	if got != "20/05/1990" {
 		t.Fatalf("formatDateBR(%q, false) = %q", raw, got)
+	}
+}
+
+func TestFormatDateBRSupportsCompactDate(t *testing.T) {
+	raw := "09072006"
+
+	got := formatDateBR(raw, false)
+
+	if got != "09/07/2006" {
+		t.Fatalf("formatDateBR(%q, false) = %q", raw, got)
+	}
+}
+
+func TestFormatDateBRSupportsCompactDateTime(t *testing.T) {
+	raw := "05052026111027"
+
+	got := formatDateBR(raw, true)
+
+	if got != "05/05/2026 11:10:27" {
+		t.Fatalf("formatDateBR(%q, true) = %q", raw, got)
+	}
+}
+
+func TestFormatDateBRKeepsLocalDateTimeWithoutTimezoneShift(t *testing.T) {
+	raw := "2026-05-05 11:10:27"
+
+	got := formatDateBR(raw, true)
+
+	if got != "05/05/2026 11:10:27" {
+		t.Fatalf("formatDateBR(%q, true) = %q", raw, got)
 	}
 }
 
@@ -55,6 +85,51 @@ func TestFormatDateForAPIDateOnlyDoesNotShiftTimezone(t *testing.T) {
 
 	if got != "2026-05-01" {
 		t.Fatalf("formatDateForAPI(%q) = %q", raw, got)
+	}
+}
+
+func TestBooleanLabelSupportsZeroAndOne(t *testing.T) {
+	if got := booleanLabel("0"); got != "Não" {
+		t.Fatalf("booleanLabel(%q) = %q", "0", got)
+	}
+	if got := booleanLabel("1"); got != "Sim" {
+		t.Fatalf("booleanLabel(%q) = %q", "1", got)
+	}
+}
+
+func TestFillCSVRecordFormatsOfficialCompactDates(t *testing.T) {
+	record := make([]string, len(csvHeaders()))
+	lead := models.Lead{
+		ID:                          42,
+		CPF:                         "63430832357",
+		NomeTrabalhador:             "KAUE DO NASCIMENTO MORAIS",
+		Status:                      "ATIVA",
+		ElegivelEmprestimo:          "true",
+		ValorLiberado:               1500,
+		MargemDisponivel:            320.76,
+		NumeroParcelas:              7,
+		ReceivedAt:                  "2026-05-04 18:00:00",
+		DataHoraValidadeSolicitacao: "2026-05-05 11:10:27",
+		DataNascimento:              "2006-07-09",
+		DataAdmissao:                "2025-10-08",
+		IsMEI:                       "false",
+		IsJudicialRecovery:          "false",
+		PEPCodigo:                   "0",
+	}
+
+	fillCSVRecord(record, lead)
+
+	if record[8] != "05/05/2026 11:10:27" {
+		t.Fatalf("fillCSVRecord validade = %q", record[8])
+	}
+	if record[9] != "09/07/2006" {
+		t.Fatalf("fillCSVRecord nascimento = %q", record[9])
+	}
+	if record[10] != "08/10/2025" {
+		t.Fatalf("fillCSVRecord admissao = %q", record[10])
+	}
+	if record[14] != "Não" {
+		t.Fatalf("fillCSVRecord pep = %q", record[14])
 	}
 }
 

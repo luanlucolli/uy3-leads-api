@@ -669,9 +669,19 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-muted">Total no período</p>
-                  <p className="mt-4 text-5xl font-bold leading-none text-text">
-                    {loading ? '--' : formatInteger(total)}
-                  </p>
+                  {loading ? (
+                    <div className="mt-4 flex items-center gap-3 text-text">
+                      <Loader2 className="size-8 animate-spin text-accent" />
+                      <div>
+                        <p className="text-2xl font-bold leading-none">Carregando</p>
+                        <p className="mt-1 text-xs font-medium uppercase tracking-[0.08em] text-muted">
+                          Atualizando métricas
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-5xl font-bold leading-none text-text">{formatInteger(total)}</p>
+                  )}
                   <p className="mt-3 text-sm text-muted">
                     {loading
                       ? 'Carregando métricas...'
@@ -689,7 +699,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <div className="mt-6 flex items-center gap-2 border-t border-[rgb(255_255_255_/_5%)] pt-4">
                 <span className="text-xs font-bold uppercase tracking-widest text-muted">Último recebimento:</span>
                 <span className="text-sm font-medium text-[#d7dde6]">
-                  {loading ? '--' : data?.last_lead_at ? formatDateTime(data.last_lead_at) : 'Nenhum registro'}
+                  {loading ? 'Carregando informações...' : data?.last_lead_at ? formatDateTime(data.last_lead_at) : 'Nenhum registro'}
                 </span>
               </div>
             </div>

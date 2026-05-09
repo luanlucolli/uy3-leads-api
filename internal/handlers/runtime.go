@@ -13,10 +13,10 @@ import (
 var brtLocation = loadBrazilLocation()
 
 const (
-	loginDBTimeout       = 45 * time.Second
-	leadsSummaryTimeout  = 45 * time.Second
-	webhookDBTimeout     = 45 * time.Second
-	exportBatchDBTimeout = 90 * time.Second
+	loginDBTimeout      = 45 * time.Second
+	leadsSummaryTimeout = 45 * time.Second
+	webhookDBTimeout    = 45 * time.Second
+	exportDBTimeout     = 90 * time.Second
 )
 
 func isContextDeadlineOrCancel(err error) bool {

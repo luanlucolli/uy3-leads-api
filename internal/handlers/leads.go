@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	defaultExportBatchSize = 500
-	maxExportWindowDays    = 180
+	exportFlushInterval = 500
+	maxExportWindowDays = 180
 )
 
 type LeadsHandler struct {
@@ -118,96 +118,77 @@ func (h *LeadsHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 	record := make([]string, len(headers))
 
 	flusher, canFlush := w.(http.Flusher)
-	batchSize := defaultExportBatchSize
-	var lastDate string
-	var lastID int64
-	hasCursor := false
+	query := fmt.Sprintf(`
+		SELECT
+			id, cpf, nome_trabalhador, status, elegivel_emprestimo,
+			valor_liberado, margem_disponivel, numero_parcelas,
+			received_at, data_hora_validade_solicitacao, data_nascimento,
+			data_admissao, is_mei, is_judicial_recovery, pep_codigo,
+			active_fgts_debts
+		FROM leads
+		%s
+		ORDER BY received_at DESC, id DESC
+	`, where)
 
-	for {
-		if err := r.Context().Err(); err != nil {
-			return
-		}
+	exportCtx, cancelExport := context.WithTimeout(r.Context(), exportDBTimeout)
+	rows, err := h.db.QueryContext(exportCtx, query, args...)
+	if err != nil {
+		cancelExport()
+		log.Printf("Erro na exportação CSV ao buscar leads: %v", err)
+		return
+	}
 
-		batchWhere := where
-		batchArgs := append([]any{}, args...)
-		if hasCursor {
-			cursorClause := "(received_at, id) < (?, ?)"
-			if batchWhere == "" {
-				batchWhere = " WHERE " + cursorClause
-			} else {
-				batchWhere += " AND " + cursorClause
-			}
-			batchArgs = append(batchArgs, lastDate, lastID)
-		}
-
-		query := fmt.Sprintf(`
-			SELECT
-				id, cpf, nome_trabalhador, status, elegivel_emprestimo,
-				valor_liberado, margem_disponivel, numero_parcelas,
-				received_at, data_hora_validade_solicitacao, data_nascimento,
-				data_admissao, is_mei, is_judicial_recovery, pep_codigo,
-				active_fgts_debts
-			FROM leads
-			%s
-			ORDER BY received_at DESC, id DESC
-			LIMIT %d
-		`, batchWhere, batchSize)
-
-		batchCtx, cancelBatch := context.WithTimeout(r.Context(), exportBatchDBTimeout)
-		rows, err := h.db.QueryContext(batchCtx, query, batchArgs...)
+	rowCount := 0
+	for rows.Next() {
+		lead, err := scanLeadForCSV(rows)
 		if err != nil {
-			cancelBatch()
-			log.Printf("Erro na exportação CSV ao buscar leads: %v", err)
-			return
-		}
-
-		batchCount := 0
-		for rows.Next() {
-			lead, err := scanLeadForCSV(rows)
-			if err != nil {
-				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				_ = rows.Close()
-				cancelBatch()
-				return
-			}
-			fillCSVRecord(record, lead)
-			if err := csvWriter.Write(record); err != nil {
-				log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
-				_ = rows.Close()
-				cancelBatch()
-				return
-			}
-			lastDate = lead.ReceivedAt
-			lastID = lead.ID
-			hasCursor = true
-			batchCount++
-		}
-
-		if err := rows.Err(); err != nil {
-			log.Printf("Erro na exportação CSV após streaming: %v", err)
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
 			_ = rows.Close()
-			cancelBatch()
+			cancelExport()
 			return
 		}
-		if err := rows.Close(); err != nil {
-			log.Printf("Erro ao encerrar exportação CSV: %v", err)
-			cancelBatch()
+		fillCSVRecord(record, lead)
+		if err := csvWriter.Write(record); err != nil {
+			log.Printf("Erro na exportação CSV (Lead ID %d): %v", lead.ID, err)
+			_ = rows.Close()
+			cancelExport()
 			return
 		}
-		cancelBatch()
+		rowCount++
+		if rowCount%exportFlushInterval == 0 {
+			csvWriter.Flush()
+			if err := csvWriter.Error(); err != nil {
+				log.Printf("Erro na exportação CSV: %v", err)
+				_ = rows.Close()
+				cancelExport()
+				return
+			}
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+	}
 
-		csvWriter.Flush()
-		if err := csvWriter.Error(); err != nil {
-			log.Printf("Erro na exportação CSV: %v", err)
-			return
-		}
-		if canFlush {
-			flusher.Flush()
-		}
+	if err := rows.Err(); err != nil {
+		log.Printf("Erro na exportação CSV após streaming: %v", err)
+		_ = rows.Close()
+		cancelExport()
+		return
+	}
+	if err := rows.Close(); err != nil {
+		log.Printf("Erro ao encerrar exportação CSV: %v", err)
+		cancelExport()
+		return
+	}
+	cancelExport()
 
-		if batchCount < batchSize {
-			break
-		}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		log.Printf("Erro na exportação CSV: %v", err)
+		return
+	}
+	if canFlush {
+		flusher.Flush()
 	}
 }
 

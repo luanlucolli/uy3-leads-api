@@ -40,7 +40,15 @@ type DashboardFilters = {
   to: string
 }
 
+type CustomSummaryCacheEntry = {
+  key: string
+  filters: DashboardFilters
+  response: LeadsSummaryResponse
+  cachedAt: string
+}
+
 const dashboardFiltersStorageKey = 'uy3_dashboard_filters'
+const customSummaryCacheStorageKey = 'uy3_dashboard_custom_summary_cache'
 const periodValues = new Set<DashboardInterval>(periods.map((item) => item.value))
 const defaultDashboardFilters: DashboardFilters = {
   interval: '7d',
@@ -49,6 +57,7 @@ const defaultDashboardFilters: DashboardFilters = {
 }
 const wakeHintDelayMs = 4_000
 const metricsPollIntervalMs = 2 * 60 * 1000
+const customOpenRangePollIntervalMs = 20 * 60 * 1000
 const companyName = readCompanyName()
 const headerSubtitle = companyName || 'Gestão de Leads'
 const headerLogoSrc = '/uy3-logo.png'
@@ -402,16 +411,28 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
   async function fetchSummary(nextFilters = appliedFilters, options?: { silent?: boolean }) {
+    const normalizedFilters = normalizeDashboardFilters(nextFilters)
+    const shouldCacheSummary = isClosedCustomRange(normalizedFilters)
+    const cachedResponse = loadCustomSummaryCache(normalizedFilters)
+    if (cachedResponse) {
+      setData(cachedResponse)
+      setAppliedFilters(normalizedFilters)
+      saveDashboardFilters(normalizedFilters)
+      return
+    }
+
     if (!options?.silent) {
       setLoading(true)
     }
 
     try {
-      const normalizedFilters = normalizeDashboardFilters(nextFilters)
       const response = await api.leads(buildFilters(normalizedFilters))
       setData(response)
       setAppliedFilters(normalizedFilters)
       saveDashboardFilters(normalizedFilters)
+      if (shouldCacheSummary) {
+        saveCustomSummaryCache(normalizedFilters, response)
+      }
     } catch (err) {
       if (isUnauthorizedApiError(err)) {
         onLogout()
@@ -492,9 +513,17 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [])
 
   useEffect(() => {
+    const pollIntervalMs = pollingIntervalForFilters(appliedFilters)
+    if (pollIntervalMs === null) {
+      return
+    }
+
     const intervalId = window.setInterval(() => {
+      if (isClosedCustomRange(appliedFilters)) {
+        return
+      }
       void fetchSummary(appliedFilters, { silent: true })
-    }, metricsPollIntervalMs)
+    }, pollIntervalMs)
 
     return () => {
       window.clearInterval(intervalId)
@@ -572,25 +601,25 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
               <>
                 <div className="min-w-[140px] flex-1">
                   <label className={fieldLabelClass} htmlFor="from">
-                    De
+                    Data/hora inicial
                   </label>
                   <input
                     id="from"
                     className={`${fieldClass} text-sm`}
-                    type="date"
-                    value={draftFilters.from}
+                    type="datetime-local"
+                    value={dateTimeInputValue(draftFilters.from, 'from')}
                     onChange={(event) => setDraftFilters((current) => ({ ...current, from: event.target.value }))}
                   />
                 </div>
                 <div className="min-w-[140px] flex-1">
                   <label className={fieldLabelClass} htmlFor="to">
-                    Até
+                    Data/hora final
                   </label>
                   <input
                     id="to"
                     className={`${fieldClass} text-sm`}
-                    type="date"
-                    value={draftFilters.to}
+                    type="datetime-local"
+                    value={dateTimeInputValue(draftFilters.to, 'to')}
                     onChange={(event) => setDraftFilters((current) => ({ ...current, to: event.target.value }))}
                   />
                 </div>
@@ -748,6 +777,9 @@ function normalizeDashboardFilters(value: Partial<DashboardFilters> | null | und
   if (filters.interval !== 'custom') {
     filters.from = ''
     filters.to = ''
+  } else {
+    filters.from = normalizeDashboardDateTimeInput(filters.from)
+    filters.to = normalizeDashboardDateTimeInput(filters.to)
   }
 
   return filters
@@ -781,16 +813,24 @@ function filterValidationMessage(filters: DashboardFilters, mode: 'summary' | 'e
   if (filters.interval === 'custom') {
     if (!filters.from) {
       return mode === 'export'
-        ? 'Preencha a data inicial antes de exportar o CSV.'
-        : 'Preencha a data inicial para consultar um intervalo personalizado.'
+        ? 'Preencha a data/hora inicial antes de exportar o CSV.'
+        : 'Preencha a data/hora inicial para consultar um intervalo personalizado.'
     }
     if (!filters.to) {
       return mode === 'export'
-        ? 'Preencha a data final antes de exportar o CSV.'
-        : 'Preencha a data final para consultar um intervalo personalizado.'
+        ? 'Preencha a data/hora final antes de exportar o CSV.'
+        : 'Preencha a data/hora final para consultar um intervalo personalizado.'
     }
-    if (filters.to < filters.from) {
-      return 'A data final deve ser maior ou igual à data inicial.'
+    const fromDate = parseDashboardDateTime(filters.from, 'from')
+    const toEndExclusive = parseDashboardEndExclusive(filters.to)
+    if (!fromDate) {
+      return 'Preencha a data/hora inicial em um formato válido.'
+    }
+    if (!toEndExclusive) {
+      return 'Preencha a data/hora final em um formato válido.'
+    }
+    if (toEndExclusive.getTime() <= fromDate.getTime()) {
+      return 'A data/hora final deve ser maior ou igual à inicial.'
     }
     if (mode === 'export' && exceedsExportRangeLimit(filters.from, filters.to)) {
       return 'O intervalo máximo para exportação CSV é de 180 dias.'
@@ -810,13 +850,180 @@ function areDashboardFiltersEqual(left: DashboardFilters, right: DashboardFilter
 }
 
 function exceedsExportRangeLimit(from: string, to: string) {
-  const fromDate = new Date(`${from}T00:00:00Z`)
-  const toDate = new Date(`${to}T00:00:00Z`)
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+  const fromDate = parseDashboardDateTime(from, 'from')
+  const toEndExclusive = parseDashboardEndExclusive(to)
+  if (!fromDate || !toEndExclusive) {
     return false
   }
 
-  return toDate.getTime()-fromDate.getTime() > 180 * 24 * 60 * 60 * 1000
+  return toEndExclusive.getTime() - fromDate.getTime() > 180 * 24 * 60 * 60 * 1000
+}
+
+function pollingIntervalForFilters(filters: DashboardFilters) {
+  if (filters.interval !== 'custom') {
+    return metricsPollIntervalMs
+  }
+  if (isClosedCustomRange(filters)) {
+    return null
+  }
+  if (isOpenCustomRange(filters)) {
+    return customOpenRangePollIntervalMs
+  }
+  return null
+}
+
+function isClosedCustomRange(filters: DashboardFilters): boolean {
+  if (filters.interval !== 'custom' || !filters.to) {
+    return false
+  }
+
+  const toDate = parseDashboardDateTime(filters.to, 'to')
+  if (!toDate) {
+    return false
+  }
+
+  return toDate.getTime() < Date.now() - 60 * 1000
+}
+
+function isOpenCustomRange(filters: DashboardFilters): boolean {
+  return filters.interval === 'custom' && Boolean(filters.from) && Boolean(filters.to) && !isClosedCustomRange(filters)
+}
+
+function buildCustomSummaryCacheKey(filters: DashboardFilters): string {
+  const normalized = normalizeDashboardFilters(filters)
+  return `period=custom&from=${normalized.from}&to=${normalized.to}`
+}
+
+function loadCustomSummaryCache(filters: DashboardFilters): LeadsSummaryResponse | null {
+  const normalized = normalizeDashboardFilters(filters)
+  if (!isClosedCustomRange(normalized)) {
+    return null
+  }
+
+  try {
+    const raw = localStorage.getItem(customSummaryCacheStorageKey)
+    if (!raw) {
+      return null
+    }
+    const cache = JSON.parse(raw) as Partial<CustomSummaryCacheEntry>
+    if (
+      cache.key !== buildCustomSummaryCacheKey(normalized) ||
+      !cache.response ||
+      typeof cache.response.total !== 'number'
+    ) {
+      return null
+    }
+    return cache.response
+  } catch {
+    clearCustomSummaryCache()
+    return null
+  }
+}
+
+function saveCustomSummaryCache(filters: DashboardFilters, response: LeadsSummaryResponse): void {
+  const normalized = normalizeDashboardFilters(filters)
+  if (!isClosedCustomRange(normalized)) {
+    return
+  }
+
+  const cache: CustomSummaryCacheEntry = {
+    key: buildCustomSummaryCacheKey(normalized),
+    filters: normalized,
+    response,
+    cachedAt: new Date().toISOString(),
+  }
+
+  try {
+    localStorage.setItem(customSummaryCacheStorageKey, JSON.stringify(cache))
+  } catch {
+    // Mantem o dashboard funcional mesmo sem persistencia local.
+  }
+}
+
+function clearCustomSummaryCache(): void {
+  try {
+    localStorage.removeItem(customSummaryCacheStorageKey)
+  } catch {
+    // Mantem o dashboard funcional mesmo sem persistencia local.
+  }
+}
+
+function normalizeDashboardDateTimeInput(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed
+  }
+  return trimmed.replace(' ', 'T')
+}
+
+function dateTimeInputValue(value: string, boundary: 'from' | 'to') {
+  const normalized = normalizeDashboardDateTimeInput(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return `${normalized}T${boundary === 'to' ? '23:59' : '00:00'}`
+  }
+  return normalized
+}
+
+function parseDashboardDateTime(value: string, boundary: 'from' | 'to') {
+  const normalized = normalizeDashboardDateTimeInput(value)
+  const dateOnlyMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const match = dateOnlyMatch ?? normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/)
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hour = dateOnlyMatch ? (boundary === 'to' ? 23 : 0) : Number(match[4])
+  const minute = dateOnlyMatch ? (boundary === 'to' ? 59 : 0) : Number(match[5])
+  const second = !dateOnlyMatch && match[6] ? Number(match[6]) : 0
+  const date = new Date(year, month - 1, day, hour, minute, second)
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day ||
+    date.getHours() !== hour ||
+    date.getMinutes() !== minute ||
+    date.getSeconds() !== second
+  ) {
+    return null
+  }
+
+  return date
+}
+
+function parseDashboardEndExclusive(value: string) {
+  const end = parseDashboardDateTime(value, 'to')
+  if (!end) {
+    return null
+  }
+
+  const normalized = normalizeDashboardDateTimeInput(value)
+  const hasSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(normalized)
+  const incrementMs = hasSeconds ? 1000 : 60 * 1000
+  return new Date(end.getTime() + incrementMs)
+}
+
+function formatFilterDateTime(value: string, boundary: 'from' | 'to') {
+  const date = parseDashboardDateTime(value, boundary)
+  if (!date) {
+    return value
+  }
+
+  const normalized = normalizeDashboardDateTimeInput(value)
+  const includeSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(normalized)
+  const datePart = `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`
+  const timePart = `${pad2(date.getHours())}:${pad2(date.getMinutes())}${includeSeconds ? `:${pad2(date.getSeconds())}` : ''}`
+  return `${datePart} ${timePart}`
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0')
 }
 
 function formatDateTime(value: string) {
@@ -844,13 +1051,13 @@ function describeActiveRange(interval: string, from: string, to: string) {
       return 'Todo o histórico'
     }
     if (from && to) {
-      return `${from} até ${to}`
+      return `${formatFilterDateTime(from, 'from')} até ${formatFilterDateTime(to, 'to')}`
     }
     if (from) {
-      return `A partir de ${from}`
+      return `A partir de ${formatFilterDateTime(from, 'from')}`
     }
     if (to) {
-      return `Até ${to}`
+      return `Até ${formatFilterDateTime(to, 'to')}`
     }
     return 'Personalizado'
   }

@@ -249,7 +249,7 @@
           "response": []
         },
         {
-          "name": "List Leads by Date Range",
+          "name": "List Leads by Date/Time Range",
           "request": {
             "method": "GET",
             "header": [
@@ -259,7 +259,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/leads?page=1&per_page=20&from=2026-04-01&to=2026-04-28&sort=received_at&direction=desc",
+              "raw": "{{base_url}}/leads?period=custom&from=2026-05-09T10:30&to=2026-05-09T12:45",
               "host": [
                 "{{base_url}}"
               ],
@@ -268,32 +268,20 @@
               ],
               "query": [
                 {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "per_page",
-                  "value": "20"
+                  "key": "period",
+                  "value": "custom"
                 },
                 {
                   "key": "from",
-                  "value": "2026-04-01"
+                  "value": "2026-05-09T10:30"
                 },
                 {
                   "key": "to",
-                  "value": "2026-04-28"
-                },
-                {
-                  "key": "sort",
-                  "value": "received_at"
-                },
-                {
-                  "key": "direction",
-                  "value": "desc"
+                  "value": "2026-05-09T12:45"
                 }
               ]
             },
-            "description": "Exemplo de listagem usando `from` e `to`, que sobrescrevem `period`."
+            "description": "Exemplo de resumo usando `from` e `to` com data e hora. Datas sem hora continuam aceitas por compatibilidade."
           },
           "response": []
         },
@@ -308,7 +296,7 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/leads/export?period=30d&sort=received_at&direction=desc",
+              "raw": "{{base_url}}/leads/export?period=custom&from=2026-05-09T10:30&to=2026-05-09T12:45",
               "host": [
                 "{{base_url}}"
               ],
@@ -319,19 +307,19 @@
               "query": [
                 {
                   "key": "period",
-                  "value": "30d"
+                  "value": "custom"
                 },
                 {
-                  "key": "sort",
-                  "value": "received_at"
+                  "key": "from",
+                  "value": "2026-05-09T10:30"
                 },
                 {
-                  "key": "direction",
-                  "value": "desc"
+                  "key": "to",
+                  "value": "2026-05-09T12:45"
                 }
               ]
             },
-            "description": "Faz o download do CSV com BOM UTF-8 e delimitador `;`."
+            "description": "Faz o download do CSV com BOM UTF-8 e delimitador `;`. Aceita `from` e `to` com data e hora."
           },
           "response": []
         }

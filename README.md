@@ -106,9 +106,26 @@ Headers aceitos:
 O endpoint `GET /leads` retorna métricas agregadas para o painel e suporta:
 
 - `period` com `all`, `24h`, `7d`, `30d`, `90d`
-- `from` e `to` no formato `YYYY-MM-DD`
+- `from` e `to` no formato `YYYY-MM-DD` ou `YYYY-MM-DDTHH:mm`
 
-Se `from` e `to` forem enviados, eles sobrescrevem `period`.
+Se `from` e `to` forem enviados, eles sobrescrevem `period`. Datas sem hora continuam aceitas por compatibilidade. Quando a hora é enviada, o intervalo é interpretado no horário local de São Paulo e comparado com `leads.received_at` em UTC.
+
+Exemplos:
+
+```text
+/leads?period=custom&from=2026-05-09T10:30&to=2026-05-09T12:45
+/leads?period=custom&from=2026-05-09T08:00&to=2026-05-09T18:00
+```
+
+O campo `to` pode estar no futuro. Isso permite acompanhar intervalos ainda abertos, como um turno do dia atual.
+
+Para manter baixo consumo de rows read no Turso:
+
+- periodos fixos e ranges custom sem hora usam `leads_summary_daily`
+- ranges custom com hora usam `COUNT(*)` direto em `leads` com `WHERE received_at >= ? AND received_at < ?`
+- nenhuma query aplica funcao sobre `received_at`, preservando o uso do indice `(received_at, id)`
+- ranges custom encerrados podem ser reaproveitados do cache local do navegador
+- ranges custom abertos ou futuros nao usam cache e atualizam em polling mais lento, a cada 20 minutos
 
 ## Exportacao CSV
 
@@ -121,6 +138,12 @@ Regras atuais:
 - delimitador `;`
 - cabecalhos compatíveis com o legado
 - datas formatadas preferencialmente no padrao brasileiro
+
+Exemplo com data e hora:
+
+```text
+/leads/export?period=custom&from=2026-05-09T10:30&to=2026-05-09T12:45
+```
 
 ## Postman
 
@@ -137,3 +160,4 @@ Se o banco nao responder ao `Ping`, o processo encerra e a API nao abre a porta.
 ## Observacoes
 
 - esta API foi pensada para uso interno
+- alteracoes de banco nao sao aplicadas automaticamente; se necessario, confirme manualmente que existe o indice `idx_leads_pagination` em `leads (received_at, id)`

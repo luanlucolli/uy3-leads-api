@@ -237,6 +237,65 @@ func TestLeadDateTimeRangeUsesExclusiveEndForCustomRange(t *testing.T) {
 	}
 }
 
+func TestLeadDateTimeRangeUsesExclusiveEndForDateTimeLocalMinutes(t *testing.T) {
+	startUTC, endExclusiveUTC, ok := leadDateTimeRange(models.LeadFilters{
+		From: "2026-05-09T10:30",
+		To:   "2026-05-09T12:45",
+	}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if !ok {
+		t.Fatal("leadDateTimeRange(datetime-local) expected range")
+	}
+	if startUTC != "2026-05-09 13:30:00" {
+		t.Fatalf("leadDateTimeRange(datetime-local) startUTC = %q", startUTC)
+	}
+	if endExclusiveUTC != "2026-05-09 15:46:00" {
+		t.Fatalf("leadDateTimeRange(datetime-local) endExclusiveUTC = %q", endExclusiveUTC)
+	}
+}
+
+func TestLeadDateTimeRangeUsesExclusiveEndForDateTimeLocalSeconds(t *testing.T) {
+	startUTC, endExclusiveUTC, ok := leadDateTimeRange(models.LeadFilters{
+		From: "2026-05-09T10:30:15",
+		To:   "2026-05-09T12:45:30",
+	}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if !ok {
+		t.Fatal("leadDateTimeRange(datetime-local seconds) expected range")
+	}
+	if startUTC != "2026-05-09 13:30:15" {
+		t.Fatalf("leadDateTimeRange(datetime-local seconds) startUTC = %q", startUTC)
+	}
+	if endExclusiveUTC != "2026-05-09 15:45:31" {
+		t.Fatalf("leadDateTimeRange(datetime-local seconds) endExclusiveUTC = %q", endExclusiveUTC)
+	}
+}
+
+func TestLeadDateTimeRangeAcceptsFutureTo(t *testing.T) {
+	_, _, ok := leadDateTimeRange(models.LeadFilters{
+		From: "2026-05-09T10:30",
+		To:   "2099-05-09T12:45",
+	}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if !ok {
+		t.Fatal("leadDateTimeRange(future to) expected range")
+	}
+}
+
+func TestBuildLeadWhereAtUsesDateTimeRange(t *testing.T) {
+	where, args := buildLeadWhereAt(models.LeadFilters{
+		From: "2026-05-09T10:30",
+		To:   "2026-05-09T12:45",
+	}, time.Date(2026, 5, 10, 15, 30, 0, 0, brtLocation))
+
+	if where != " WHERE received_at >= ? AND received_at < ?" {
+		t.Fatalf("buildLeadWhereAt(datetime-local) where = %q", where)
+	}
+	if len(args) != 2 || args[0] != "2026-05-09 13:30:00" || args[1] != "2026-05-09 15:46:00" {
+		t.Fatalf("buildLeadWhereAt(datetime-local) args = %#v", args)
+	}
+}
+
 func TestValidateExportFiltersBlocksAllWithoutDate(t *testing.T) {
 	err := validateExportFilters(models.LeadFilters{Period: "all"})
 
@@ -286,7 +345,7 @@ func TestExportCSVStreamsWithoutCursorOrBatchLimit(t *testing.T) {
 	})
 	handler := NewLeadsHandler(db)
 
-	request := httptest.NewRequest(http.MethodGet, "/leads/export?period=custom&from=2026-05-01&to=2026-05-02", nil)
+	request := httptest.NewRequest(http.MethodGet, "/leads/export?period=custom&from=2026-05-01T09:00&to=2026-05-02T18:30", nil)
 	response := httptest.NewRecorder()
 
 	handler.ExportCSV(response, request)
@@ -311,6 +370,9 @@ func TestExportCSVStreamsWithoutCursorOrBatchLimit(t *testing.T) {
 	if !strings.Contains(mainQuery, "ORDER BY received_at DESC, id DESC") {
 		t.Fatalf("export query missing stable order: %q", mainQuery)
 	}
+	if len((*queries)[1].args) != 2 || (*queries)[1].args[0].Value != "2026-05-01 12:00:00" || (*queries)[1].args[1].Value != "2026-05-02 21:31:00" {
+		t.Fatalf("export query args = %#v", (*queries)[1].args)
+	}
 
 	body := response.Body.String()
 	if !strings.HasPrefix(body, "\ufeff") {
@@ -333,6 +395,78 @@ func TestExportCSVStreamsWithoutCursorOrBatchLimit(t *testing.T) {
 	}
 	if records[2][0] != "11111111111" || records[2][1] != "BRUNO COSTA" || records[2][7] != "01/05/2026 09:00:00" || records[2][11] != "1" {
 		t.Fatalf("second csv row = %#v", records[2])
+	}
+}
+
+func TestListCustomDateTimeUsesLeadsCount(t *testing.T) {
+	db, queries := openLeadExportTestDB(t, nil)
+	handler := NewLeadsHandler(db)
+
+	request := httptest.NewRequest(http.MethodGet, "/leads?period=custom&from=2026-05-09T10:30&to=2026-05-09T12:45", nil)
+	response := httptest.NewRecorder()
+
+	handler.List(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if len(*queries) < 1 {
+		t.Fatal("expected at least one query")
+	}
+
+	totalQuery := normalizeSQL((*queries)[0].query)
+	if !strings.Contains(totalQuery, "SELECT COUNT(*) FROM leads WHERE received_at >= ? AND received_at < ?") {
+		t.Fatalf("summary query = %q", totalQuery)
+	}
+	if strings.Contains(totalQuery, "leads_summary_daily") {
+		t.Fatalf("custom datetime should not use daily summary: %q", totalQuery)
+	}
+}
+
+func TestListCustomDateOnlyUsesDailySummary(t *testing.T) {
+	db, queries := openLeadExportTestDB(t, nil)
+	handler := NewLeadsHandler(db)
+
+	request := httptest.NewRequest(http.MethodGet, "/leads?period=custom&from=2026-05-01&to=2026-05-02", nil)
+	response := httptest.NewRecorder()
+
+	handler.List(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if len(*queries) < 1 {
+		t.Fatal("expected at least one query")
+	}
+
+	totalQuery := normalizeSQL((*queries)[0].query)
+	if !strings.Contains(totalQuery, "FROM leads_summary_daily") {
+		t.Fatalf("custom date-only should use daily summary: %q", totalQuery)
+	}
+	if strings.Contains(totalQuery, "COUNT(*) FROM leads") {
+		t.Fatalf("custom date-only should not count leads directly: %q", totalQuery)
+	}
+}
+
+func TestListFixedPeriodUsesDailySummary(t *testing.T) {
+	db, queries := openLeadExportTestDB(t, nil)
+	handler := NewLeadsHandler(db)
+
+	request := httptest.NewRequest(http.MethodGet, "/leads?period=7d", nil)
+	response := httptest.NewRecorder()
+
+	handler.List(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if len(*queries) < 1 {
+		t.Fatal("expected at least one query")
+	}
+
+	totalQuery := normalizeSQL((*queries)[0].query)
+	if !strings.Contains(totalQuery, "FROM leads_summary_daily") {
+		t.Fatalf("fixed period should use daily summary: %q", totalQuery)
 	}
 }
 
@@ -421,6 +555,8 @@ type leadExportDriver struct{}
 type leadExportConn struct {
 	queries    *[]leadExportQueryCall
 	exportRows [][]driver.Value
+	total      int64
+	lastLeadAt string
 }
 
 type leadExportRows struct {
@@ -442,6 +578,8 @@ var (
 type leadExportDriverCase struct {
 	queries    *[]leadExportQueryCall
 	exportRows [][]driver.Value
+	total      int64
+	lastLeadAt string
 }
 
 func openLeadExportTestDB(t *testing.T, exportRows [][]driver.Value) (*sql.DB, *[]leadExportQueryCall) {
@@ -455,9 +593,15 @@ func openLeadExportTestDB(t *testing.T, exportRows [][]driver.Value) (*sql.DB, *
 	leadExportDriverCounter++
 	dsn := fmt.Sprintf("lead-export-test-%d", leadExportDriverCounter)
 	queries := &[]leadExportQueryCall{}
+	total := int64(len(exportRows))
+	if total == 0 {
+		total = 2
+	}
 	leadExportDriverCases[dsn] = leadExportDriverCase{
 		queries:    queries,
 		exportRows: exportRows,
+		total:      total,
+		lastLeadAt: "2026-05-09 15:30:00",
 	}
 	leadExportDriverMu.Unlock()
 
@@ -488,6 +632,8 @@ func (leadExportDriver) Open(name string) (driver.Conn, error) {
 	return &leadExportConn{
 		queries:    testCase.queries,
 		exportRows: testCase.exportRows,
+		total:      testCase.total,
+		lastLeadAt: testCase.lastLeadAt,
 	}, nil
 }
 
@@ -519,6 +665,24 @@ func (c *leadExportConn) QueryContext(_ context.Context, query string, args []dr
 		return &leadExportRows{
 			columns: []string{"1"},
 			rows:    [][]driver.Value{{int64(1)}},
+		}, nil
+	}
+	if strings.HasPrefix(normalized, "SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily") {
+		return &leadExportRows{
+			columns: []string{"total"},
+			rows:    [][]driver.Value{{c.total}},
+		}, nil
+	}
+	if strings.HasPrefix(normalized, "SELECT COUNT(*) FROM leads") {
+		return &leadExportRows{
+			columns: []string{"total"},
+			rows:    [][]driver.Value{{c.total}},
+		}, nil
+	}
+	if strings.HasPrefix(normalized, "SELECT received_at FROM leads") {
+		return &leadExportRows{
+			columns: []string{"received_at"},
+			rows:    [][]driver.Value{{c.lastLeadAt}},
 		}, nil
 	}
 

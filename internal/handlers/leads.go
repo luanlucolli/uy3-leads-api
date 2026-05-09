@@ -40,13 +40,13 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().In(brtLocation)
-	where, args := buildSummaryWhereAt(filters, now)
+	summaryQuery, summaryArgs := buildSummaryTotalQueryAt(filters, now)
 	response := models.SummaryResponse{}
 	summaryCtx, cancelSummary := context.WithTimeout(r.Context(), leadsSummaryTimeout)
 	err = h.db.QueryRowContext(
 		summaryCtx,
-		"SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily"+where,
-		args...,
+		summaryQuery,
+		summaryArgs...,
 	).Scan(&response.Total)
 	cancelSummary()
 	if err != nil {
@@ -233,18 +233,19 @@ func validateDateFilters(filters models.LeadFilters, opts dateFilterValidationOp
 		return fmt.Errorf("informe data inicial e final para %s", opts.action)
 	}
 
-	from, err := time.Parse("2006-01-02", filters.From)
+	from, _, err := parseLeadFilterDateTimeInLocation(filters.From, brtLocation)
 	if err != nil {
-		return fmt.Errorf("from deve estar no formato YYYY-MM-DD")
+		return fmt.Errorf("from deve estar no formato YYYY-MM-DD ou YYYY-MM-DDTHH:mm")
 	}
-	to, err := time.Parse("2006-01-02", filters.To)
+	to, toPrecision, err := parseLeadFilterDateTimeInLocation(filters.To, brtLocation)
 	if err != nil {
-		return fmt.Errorf("to deve estar no formato YYYY-MM-DD")
+		return fmt.Errorf("to deve estar no formato YYYY-MM-DD ou YYYY-MM-DDTHH:mm")
 	}
-	if to.Before(from) {
+	endExclusive := models.LeadFilterEndExclusive(to, toPrecision)
+	if !endExclusive.After(from) {
 		return fmt.Errorf("to deve ser maior ou igual a from")
 	}
-	if opts.maxCustomRangeDays > 0 && to.Sub(from) > time.Duration(opts.maxCustomRangeDays)*24*time.Hour {
+	if opts.maxCustomRangeDays > 0 && endExclusive.Sub(from) > time.Duration(opts.maxCustomRangeDays)*24*time.Hour {
 		return fmt.Errorf("intervalo maximo para exportacao CSV e de %d dias", opts.maxCustomRangeDays)
 	}
 
@@ -374,6 +375,33 @@ func buildSummaryWhere(filters models.LeadFilters) (string, []any) {
 	return buildSummaryWhereAt(filters, time.Now().In(brtLocation))
 }
 
+func buildSummaryTotalQueryAt(filters models.LeadFilters, now time.Time) (string, []any) {
+	if shouldCountLeadsForSummary(filters) {
+		where, args := buildLeadWhereAt(filters, now)
+		return "SELECT COUNT(*) FROM leads" + where, args
+	}
+
+	where, args := buildSummaryWhereAt(filters, now)
+	return "SELECT COALESCE(SUM(quantidade), 0) FROM leads_summary_daily" + where, args
+}
+
+func shouldCountLeadsForSummary(filters models.LeadFilters) bool {
+	return filters.From != "" && filters.To != "" && !isDateOnlyRange(filters)
+}
+
+func isDateOnlyRange(filters models.LeadFilters) bool {
+	from, fromPrecision, err := models.ParseLeadFilterDateTime(filters.From)
+	if err != nil || fromPrecision != models.LeadFilterPrecisionDate {
+		return false
+	}
+	_, toPrecision, err := models.ParseLeadFilterDateTime(filters.To)
+	if err != nil || toPrecision != models.LeadFilterPrecisionDate {
+		return false
+	}
+
+	return !from.IsZero()
+}
+
 func buildSummaryWhereAt(filters models.LeadFilters, now time.Time) (string, []any) {
 	fromDate, toDate := summaryDateRange(filters, now)
 	clauses := make([]string, 0, 2)
@@ -409,11 +437,21 @@ func summaryDateRange(filters models.LeadFilters, now time.Time) (string, string
 }
 
 func leadDateTimeRange(filters models.LeadFilters, now time.Time) (string, string, bool) {
+	if filters.From != "" && filters.To != "" {
+		start, endExclusive, ok := customLeadDateTimeRange(filters)
+		if !ok {
+			return "", "", false
+		}
+		return start.UTC().Format("2006-01-02 15:04:05"), endExclusive.UTC().Format("2006-01-02 15:04:05"), true
+	}
+	if filters.From != "" || filters.To != "" {
+		return "", "", false
+	}
+
 	startDay, endDay, hasRange := resolveBRTDayRange(filters, now)
 	if !hasRange {
 		return "", "", false
 	}
-
 	start := startOfDayInLocation(startDay, brtLocation)
 	endExclusive := startOfDayInLocation(endDay, brtLocation).AddDate(0, 0, 1)
 	return start.UTC().Format("2006-01-02 15:04:05"), endExclusive.UTC().Format("2006-01-02 15:04:05"), true
@@ -424,12 +462,12 @@ func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, t
 	now = now.In(loc)
 
 	if filters.From != "" && filters.To != "" {
-		fromDate, err := time.ParseInLocation("2006-01-02", filters.From, loc)
-		if err != nil {
+		fromDate, fromPrecision, err := parseLeadFilterDateTimeInLocation(filters.From, loc)
+		if err != nil || fromPrecision != models.LeadFilterPrecisionDate {
 			return time.Time{}, time.Time{}, false
 		}
-		toDate, err := time.ParseInLocation("2006-01-02", filters.To, loc)
-		if err != nil {
+		toDate, toPrecision, err := parseLeadFilterDateTimeInLocation(filters.To, loc)
+		if err != nil || toPrecision != models.LeadFilterPrecisionDate {
 			return time.Time{}, time.Time{}, false
 		}
 		return startOfDayInLocation(fromDate, loc), startOfDayInLocation(toDate, loc), true
@@ -451,6 +489,41 @@ func resolveBRTDayRange(filters models.LeadFilters, now time.Time) (time.Time, t
 	default:
 		return time.Time{}, time.Time{}, false
 	}
+}
+
+func customLeadDateTimeRange(filters models.LeadFilters) (time.Time, time.Time, bool) {
+	start, _, err := parseLeadFilterDateTimeInLocation(filters.From, brtLocation)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+	to, toPrecision, err := parseLeadFilterDateTimeInLocation(filters.To, brtLocation)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+	endExclusive := models.LeadFilterEndExclusive(to, toPrecision)
+	if !endExclusive.After(start) {
+		return time.Time{}, time.Time{}, false
+	}
+
+	return start, endExclusive, true
+}
+
+func parseLeadFilterDateTimeInLocation(value string, loc *time.Location) (time.Time, models.LeadFilterDateTimePrecision, error) {
+	parsed, precision, err := models.ParseLeadFilterDateTime(value)
+	if err != nil {
+		return time.Time{}, precision, err
+	}
+
+	return time.Date(
+		parsed.Year(),
+		parsed.Month(),
+		parsed.Day(),
+		parsed.Hour(),
+		parsed.Minute(),
+		parsed.Second(),
+		0,
+		loc,
+	), precision, nil
 }
 
 func startOfDayInLocation(value time.Time, loc *time.Location) time.Time {
